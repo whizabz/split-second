@@ -1,0 +1,2930 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>SplitSecond</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- Firebase -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-app.js";
+  import { getDatabase, ref, set, get, update, onValue, push, remove } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-database.js";
+  import {
+    getAuth,
+    signInAnonymously,
+    onAuthStateChanged,
+    createUserWithEmailAndPassword,
+    signInWithEmailAndPassword,
+    linkWithCredential,
+    EmailAuthProvider,
+    GoogleAuthProvider,
+    signInWithPopup,
+    signOut
+  } from "https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyDCDDaHqYUJh-Zyq4EQ7eCD9kNQ57Cv114",
+    authDomain: "splitsecond-d6d43.firebaseapp.com",
+    databaseURL: "https://splitsecond-d6d43-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "splitsecond-d6d43",
+    storageBucket: "splitsecond-d6d43.firebasestorage.app",
+    messagingSenderId: "282239163431",
+    appId: "1:282239163431:web:fd96119a0dc55b426d0202",
+    measurementId: "G-8NDMQ3Q5M7"
+  };
+
+  let app, db, auth;
+  let firebaseReady = false;
+
+  try {
+    app  = initializeApp(firebaseConfig);
+    db   = getDatabase(app);
+    auth = getAuth(app);
+    firebaseReady = true;
+  } catch(e) {
+    console.warn("Firebase not configured — running in local-only mode.", e);
+  }
+
+  // Expose to global scope
+  window._fb = {
+    db, auth, ref, set, get, update, onValue, push, remove,
+    createUserWithEmailAndPassword, signInWithEmailAndPassword,
+    linkWithCredential, EmailAuthProvider,
+    GoogleAuthProvider, signInWithPopup, signOut,
+    ready: firebaseReady
+  };
+
+  // ── AUTO SIGN-IN ─────────────────────────────────────────────────────────────
+  if (firebaseReady) {
+    onAuthStateChanged(auth, user => {
+      if (user) {
+        window._fb.currentUser = user;
+        window._fb.uid = user.uid;
+        window._fb.isAnonymous = user.isAnonymous;
+        if (window._fbAuthReady) window._fbAuthReady(user);
+      } else {
+        signInAnonymously(auth).catch(e => console.warn('Anon sign-in failed', e));
+      }
+    });
+  }
+</script>
+
+<style>
+  /* ── DESIGN TOKENS ─────────────────────────────────────────────────── */
+  :root {
+    --bg:         #F2EFE9;
+    --surface:    #ECEAE4;
+    --surface-2:  #E4E0D8;
+    --dark:       #3A3530;
+    --accent:     #E8471A;
+    --accent-dim: rgba(232,71,26,0.12);
+    --text:       #1A1714;
+    --text-2:     #9A9590;
+    --border:     #D8D4CE;
+    --white:      #FFFFFF;
+    --shadow-sm:  0 2px 8px rgba(0,0,0,0.06);
+    --shadow-md:  0 4px 20px rgba(0,0,0,0.09);
+    --shadow-lg:  0 12px 40px rgba(0,0,0,0.12);
+    --r-sm:       10px;
+    --r-md:       16px;
+    --r-lg:       24px;
+    --r-pill:     100px;
+    --font-display: 'DM Serif Display', serif;
+    --font-body:    'DM Sans', sans-serif;
+    --font-mono:    'DM Mono', monospace;
+  }
+
+  /* ── RESET ─────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { font-size: 16px; -webkit-text-size-adjust: 100%; }
+  body {
+    font-family: var(--font-body);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    overflow-x: hidden;
+  }
+  button { font-family: inherit; cursor: pointer; border: none; background: none; }
+  input, select, textarea { font-family: inherit; outline: none; }
+  a { color: inherit; text-decoration: none; }
+
+  /* ── LAYOUT ────────────────────────────────────────────────────────── */
+  .app {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100dvh;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ── SCREENS ───────────────────────────────────────────────────────── */
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    opacity: 0;
+    pointer-events: none;
+    transform: translateX(24px);
+    transition: opacity 0.28s ease, transform 0.28s ease;
+    background: var(--bg);
+  }
+  .screen.active {
+    opacity: 1;
+    pointer-events: all;
+    transform: translateX(0);
+  }
+  .screen.exit-left {
+    opacity: 0;
+    transform: translateX(-24px);
+    pointer-events: none;
+  }
+
+  /* ── NAV BAR ───────────────────────────────────────────────────────── */
+  .nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 56px 20px 16px;
+    gap: 12px;
+    flex-shrink: 0;
+  }
+  .nav-center { flex: 1; text-align: center; }
+  .nav-title {
+    font-family: var(--font-display);
+    font-size: 18px;
+    color: var(--text);
+  }
+  .nav-sub {
+    font-size: 12px;
+    color: var(--text-2);
+    margin-top: 2px;
+    font-family: var(--font-mono);
+  }
+  .nav-btn {
+    width: 38px; height: 38px;
+    border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: var(--white);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--shadow-sm);
+    flex-shrink: 0;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .nav-btn:hover { background: var(--surface); border-color: var(--text-2); }
+  .nav-btn svg { width: 16px; height: 16px; stroke: var(--text); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .nav-btn.accent { background: var(--accent); border-color: var(--accent); }
+  .nav-btn.accent svg { stroke: var(--white); }
+
+  /* ── HOME SCREEN ───────────────────────────────────────────────────── */
+  #screen-home .hero {
+    padding: 8px 20px 32px;
+  }
+  #screen-home .hero-eyebrow {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--accent);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  #screen-home .hero-title {
+    font-family: var(--font-display);
+    font-size: 38px;
+    line-height: 1.1;
+    color: var(--text);
+  }
+  #screen-home .hero-title em {
+    font-style: italic;
+    color: var(--accent);
+  }
+  #screen-home .hero-sub {
+    font-size: 14px;
+    color: var(--text-2);
+    margin-top: 10px;
+    line-height: 1.5;
+  }
+
+  .btn-primary {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%;
+    margin: 0;
+    padding: 16px 24px;
+    background: var(--accent);
+    color: var(--white);
+    border-radius: var(--r-pill);
+    font-size: 15px;
+    font-weight: 600;
+    box-shadow: 0 4px 20px rgba(232,71,26,0.30);
+    transition: transform 0.15s, box-shadow 0.15s;
+    letter-spacing: 0.01em;
+  }
+  .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(232,71,26,0.38); }
+  .btn-primary:active { transform: translateY(0); }
+  .btn-primary svg { width: 18px; height: 18px; stroke: var(--white); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .btn-secondary {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%;
+    padding: 14px 24px;
+    background: var(--white);
+    color: var(--text);
+    border-radius: var(--r-pill);
+    border: 1.5px solid var(--border);
+    font-size: 15px;
+    font-weight: 600;
+    font-family: var(--font-body);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    letter-spacing: 0.01em;
+  }
+  .btn-secondary:hover { background: var(--surface); border-color: var(--text-2); }
+  .btn-secondary svg { width: 16px; height: 16px; stroke: var(--text); fill: none; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* currency selector on home */
+  .currency-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 20px;
+    margin: 16px 0 24px;
+  }
+  .currency-label { font-size: 12px; color: var(--text-2); font-family: var(--font-mono); }
+  .currency-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    padding: 5px 12px;
+    border-radius: var(--r-pill);
+    border: 1.5px solid var(--border);
+    background: var(--white);
+    font-size: 12px;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .chip:hover { border-color: var(--text-2); color: var(--text); }
+  .chip.active { background: var(--accent); border-color: var(--accent); color: var(--white); }
+
+  /* expense suggestion pills */
+  .expense-suggestions {
+    display: flex; gap: 7px;
+    overflow-x: auto; overflow-y: hidden;
+    padding: 2px 0 6px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .expense-suggestions::-webkit-scrollbar { display: none; }
+  .exp-pill {
+    display: flex; align-items: center; gap: 5px;
+    padding: 6px 12px;
+    border-radius: var(--r-pill);
+    border: 1.5px solid var(--border);
+    background: var(--white);
+    font-size: 13px; font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: border-color 0.15s, background 0.15s, color 0.15s, transform 0.12s;
+  }
+  .exp-pill:hover { border-color: var(--accent); color: var(--accent); transform: translateY(-1px); }
+  .exp-pill.selected { background: var(--accent); border-color: var(--accent); color: var(--white); }
+  .exp-pill .pill-emoji { font-size: 14px; line-height: 1; }
+
+  /* section header */
+  .section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px;
+    margin-bottom: 12px;
+  }
+  .section-title {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* activity list */
+  .activity-list { padding: 0 20px 32px; display: flex; flex-direction: column; gap: 10px; }
+  .activity-card {
+    background: var(--white);
+    border-radius: var(--r-md);
+    padding: 16px;
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    border: 1.5px solid transparent;
+    display: flex; align-items: center; gap: 14px;
+  }
+  .activity-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); border-color: var(--border); }
+  .activity-icon {
+    width: 44px; height: 44px; border-radius: var(--r-sm);
+    background: var(--accent-dim);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .activity-info { flex: 1; min-width: 0; }
+  .activity-name { font-size: 15px; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .activity-meta { font-size: 12px; color: var(--text-2); margin-top: 2px; font-family: var(--font-mono); }
+  .activity-amount { font-family: var(--font-mono); font-size: 15px; font-weight: 500; color: var(--text); text-align: right; flex-shrink: 0; }
+  .activity-amount span { display: block; font-size: 11px; color: var(--text-2); font-weight: 400; margin-top: 2px; }
+  .activity-quick-add {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: var(--white);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s, border-color 0.15s, transform 0.15s;
+    color: var(--text-2);
+  }
+  .activity-quick-add:hover { background: var(--accent); border-color: var(--accent); color: var(--white); transform: scale(1.08); }
+  .activity-quick-add svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+  .empty-state {
+    text-align: center; padding: 40px 20px;
+    color: var(--text-2); font-size: 14px; line-height: 1.6;
+  }
+  .empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+
+  /* ── SETUP SCREEN ──────────────────────────────────────────────────── */
+  .setup-body { padding: 0 20px 32px; display: flex; flex-direction: column; gap: 24px; }
+
+  .field-group { display: flex; flex-direction: column; gap: 8px; }
+  .field-label {
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-2);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .field-input {
+    width: 100%;
+    padding: 13px 16px;
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-md);
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--text);
+    box-shadow: var(--shadow-sm);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .field-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .field-input::placeholder { color: var(--text-2); font-weight: 400; }
+
+  .name-input-row { display: flex; gap: 8px; align-items: center; }
+  .name-input-row .field-input { flex: 1; }
+  .btn-icon {
+    width: 44px; height: 44px; border-radius: var(--r-sm);
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .btn-icon:hover { background: var(--surface-2); }
+  .btn-icon.danger:hover { background: #FFE8E3; }
+  .btn-icon svg { width: 16px; height: 16px; stroke: var(--text); fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  .btn-icon.danger svg { stroke: var(--accent); }
+
+  .people-list { display: flex; flex-direction: column; gap: 8px; }
+  .person-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 10px 12px;
+  }
+  .person-avatar {
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--accent-dim);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; color: var(--accent);
+    flex-shrink: 0;
+  }
+  .person-name-input {
+    flex: 1; border: none; background: transparent;
+    font-size: 14px; font-weight: 500; color: var(--text);
+    padding: 0;
+  }
+  .person-name-input:focus { outline: none; }
+  .person-name-input::placeholder { color: var(--text-2); font-weight: 400; }
+
+  .people-edit-list { display: flex; flex-direction: column; gap: 8px; }
+  .people-edit-row {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 8px 12px;
+    transition: border-color 0.15s;
+  }
+  .people-edit-row:focus-within { border-color: var(--accent); }
+  .people-edit-row.removed {
+    opacity: 0.55;
+    background: var(--surface);
+  }
+  /* restore button punches through the row's dimmed opacity */
+  .people-edit-row.removed .btn-restore {
+    opacity: 1;
+    background: #E8F5E9;
+    border-color: #2E7D32;
+    color: #2E7D32;
+  }
+  .people-edit-row.removed .btn-restore:hover {
+    background: #2E7D32;
+    border-color: #2E7D32;
+  }
+  .people-edit-row.removed .btn-restore:hover svg { stroke: white; }
+  .people-edit-name {
+    flex: 1; border: none; background: transparent;
+    font-size: 14px; font-weight: 500; color: var(--text);
+    padding: 6px 0;
+  }
+  .people-edit-name:focus { outline: none; }
+  .people-edit-name:disabled { color: var(--text-2); }
+  .people-edit-tag {
+    font-size: 10px; font-family: var(--font-mono);
+    color: var(--text-2); padding: 2px 7px;
+    background: var(--surface); border-radius: var(--r-pill);
+    flex-shrink: 0;
+  }
+  .people-edit-tag.new { background: #E8F5E9; color: #2E7D32; }
+  .people-edit-tag.removed { background: #FFF3E0; color: #E65100; }
+    display: flex; align-items: center; gap: 8px;
+    padding: 11px 16px;
+    background: var(--surface);
+    border-radius: var(--r-md);
+    font-size: 14px; font-weight: 500; color: var(--text-2);
+    transition: background 0.15s, color 0.15s;
+    border: 1.5px dashed var(--border);
+  }
+  .add-person-btn:hover { background: var(--accent-dim); color: var(--accent); border-color: var(--accent); }
+  .add-person-btn svg { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2.5; stroke-linecap: round; }
+
+  /* ── SPLIT SCREEN ──────────────────────────────────────────────────── */
+  .tab-bar {
+    display: flex; gap: 4px;
+    padding: 0 20px 16px;
+    flex-shrink: 0;
+  }
+  .tab-btn {
+    flex: 1; padding: 9px 12px;
+    border-radius: var(--r-sm);
+    font-size: 13px; font-weight: 500;
+    color: var(--text-2);
+    background: var(--surface);
+    transition: all 0.15s;
+    text-align: center;
+  }
+  .tab-btn.active { background: var(--accent); color: var(--white); box-shadow: 0 2px 12px rgba(232,71,26,0.25); }
+
+  .tab-panel { display: none; flex: 1; overflow-y: auto; }
+  .tab-panel.active { display: block; }
+
+  /* expenses list */
+  .expenses-list { padding: 0 20px 100px; display: flex; flex-direction: column; gap: 10px; }
+  .expense-card {
+    background: var(--white);
+    border-radius: var(--r-md);
+    padding: 14px 16px;
+    box-shadow: var(--shadow-sm);
+    border: 1.5px solid transparent;
+    transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s;
+  }
+  .expense-card:hover { transform: translateY(-1px); box-shadow: var(--shadow-md); border-color: var(--border); }
+  .expense-card:active { transform: translateY(0); box-shadow: var(--shadow-sm); }
+  .expense-card-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; }
+  .expense-desc { font-size: 15px; font-weight: 600; color: var(--text); line-height: 1.3; }
+  .expense-amount { font-family: var(--font-mono); font-size: 15px; font-weight: 500; color: var(--text); flex-shrink: 0; line-height: 1.3; }
+  .expense-meta { font-size: 12px; color: var(--text-2); margin-top: 4px; font-family: var(--font-mono); }
+  .expense-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .tag {
+    padding: 3px 8px;
+    border-radius: var(--r-pill);
+    background: var(--surface);
+    font-size: 11px;
+    font-family: var(--font-mono);
+    color: var(--text-2);
+  }
+  .tag.accent { background: var(--accent-dim); color: var(--accent); }
+
+  /* FAB */
+  .fab {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    width: 56px; height: 56px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 4px 20px rgba(232,71,26,0.40);
+    display: flex; align-items: center; justify-content: center;
+    transition: transform 0.15s, box-shadow 0.15s;
+    z-index: 100;
+  }
+  .fab:hover { transform: scale(1.06); box-shadow: 0 6px 28px rgba(232,71,26,0.48); }
+  .fab svg { width: 22px; height: 22px; stroke: var(--white); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* summary */
+  .summary-list { padding: 0 20px 100px; display: flex; flex-direction: column; gap: 10px; }
+  .summary-card {
+    background: var(--white);
+    border-radius: var(--r-md);
+    padding: 16px;
+    box-shadow: var(--shadow-sm);
+  }
+  .summary-person { font-size: 14px; font-weight: 600; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .summary-person .person-avatar { width: 28px; height: 28px; font-size: 11px; }
+  .summary-row { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-top: 1px solid var(--surface); }
+  .summary-row:first-of-type { border-top: none; }
+  .summary-row-label { font-size: 13px; color: var(--text-2); }
+  .summary-row-val { font-family: var(--font-mono); font-size: 13px; font-weight: 500; }
+  .summary-row-val.owe { color: var(--accent); }
+  .summary-row-val.owed { color: #2E7D32; }
+  .summary-row-val.zero { color: var(--text-2); }
+
+  .settlement-section { padding: 0 20px 16px; }
+  .settlement-title { font-size: 11px; font-family: var(--font-mono); color: var(--text-2); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+  .settlement-row {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--white);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    box-shadow: var(--shadow-sm);
+    transition: opacity 0.2s;
+  }
+  .settlement-col-from {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    min-width: 0;
+  }
+  .settlement-col-to {
+    flex: 1; display: flex; align-items: center; gap: 8px;
+    min-width: 0;
+  }
+  .settlement-col-from .settlement-name { flex: 1; }
+  .settlement-col-to .settlement-name { flex: 1; }
+  .settlement-row.settled { opacity: 0.45; }
+  .settlement-row.settled .settlement-amt { text-decoration: line-through; color: var(--text-2); }
+  .settlement-row.settled .settlement-name { text-decoration: line-through; color: var(--text-2); }
+  .settlement-row.settled .settlement-arrow { opacity: 0.4; }
+  .settlement-arrow { color: var(--text-2); font-size: 18px; flex-shrink: 0; }
+  .settlement-name { font-size: 14px; font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .settlement-name:first-of-type { text-align: left; }
+  .settlement-amt { font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--accent); flex-shrink: 0; text-align: right; }
+  .settle-check {
+    width: 30px; height: 30px; border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--white);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; cursor: pointer;
+    transition: all 0.18s;
+  }
+  .settle-check:hover { border-color: #2E7D32; background: #F1F8F1; }
+  .settle-check.done { background: #2E7D32; border-color: #2E7D32; }
+  .settle-check svg { width: 13px; height: 13px; stroke: var(--text-2); fill: none; stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; transition: stroke 0.18s; }
+  .settle-check.done svg { stroke: var(--white); }
+
+  .settlement-share-btn {
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    width: 100%;
+    padding: 11px 16px;
+    border-radius: var(--r-pill);
+    border: 1.5px solid var(--border);
+    background: var(--white);
+    font-size: 13px; font-weight: 600; color: var(--text);
+    margin-top: 4px;
+    box-shadow: var(--shadow-sm);
+    transition: all 0.15s;
+  }
+  .settlement-share-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+  .settlement-share-btn svg { width: 15px; height: 15px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* image preview sheet */
+  #sheet-img-preview .sheet-body { align-items: center; }
+  #summary-img-canvas {
+    width: 100%; border-radius: var(--r-md);
+    box-shadow: var(--shadow-lg);
+    display: block;
+  }
+  .img-action-row { display: flex; gap: 10px; width: 100%; margin-top: 4px; }
+  .img-action-row .btn-primary { flex: 1; margin: 0; width: auto; }
+
+  /* share panel */
+  .share-panel { padding: 0 20px 100px; }
+  .share-card {
+    background: var(--white);
+    border-radius: var(--r-lg);
+    padding: 24px;
+    box-shadow: var(--shadow-md);
+    text-align: center;
+  }
+  .share-card .share-title { font-family: var(--font-display); font-size: 22px; margin-bottom: 4px; }
+  .share-card .share-sub { font-size: 13px; color: var(--text-2); margin-bottom: 24px; }
+  #qr-canvas { border-radius: var(--r-md); margin: 0 auto 20px; display: block; }
+  .share-url {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--surface);
+    border-radius: var(--r-md);
+    padding: 12px 14px;
+    margin-bottom: 16px;
+  }
+  .share-url-text { flex: 1; font-family: var(--font-mono); font-size: 12px; color: var(--text-2); word-break: break-all; text-align: left; }
+  .copy-btn {
+    padding: 6px 12px;
+    background: var(--accent);
+    color: var(--white);
+    border-radius: var(--r-pill);
+    font-size: 12px;
+    font-weight: 600;
+    flex-shrink: 0;
+    transition: opacity 0.15s;
+  }
+  .copy-btn:hover { opacity: 0.85; }
+
+  /* ── BOTTOM SHEET ──────────────────────────────────────────────────── */
+  .sheet-backdrop {
+    position: fixed; inset: 0;
+    background: rgba(26,23,20,0.45);
+    z-index: 200;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s ease;
+    backdrop-filter: blur(2px);
+  }
+  .sheet-backdrop.open { opacity: 1; pointer-events: all; }
+
+  /* stacked sheet — sits above the people sheet */
+  #sheet-backdrop-people-info {
+    z-index: 210;
+    background: rgba(26,23,20,0.55);
+    backdrop-filter: blur(4px);
+  }
+  #sheet-people-info {
+    z-index: 211;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    transform: translateY(100%);
+  }
+  #sheet-people-info.open {
+    transform: translateY(0);
+  }
+
+  /* stacked sheet — sits above the expense sheet */
+  #sheet-backdrop-delete {
+    z-index: 210;
+    background: rgba(26,23,20,0.55);
+    backdrop-filter: blur(4px);
+  }
+  #sheet-delete-confirm {
+    z-index: 211;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    transform: translateY(100%);
+  }
+  #sheet-delete-confirm.open {
+    transform: translateY(0);
+  }
+
+  /* delete split sheet — sits above main content */
+  #sheet-backdrop-delete-split {
+    z-index: 210;
+    background: rgba(26,23,20,0.55);
+    backdrop-filter: blur(4px);
+  }
+  #sheet-delete-split {
+    z-index: 211;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    transform: translateY(100%);
+  }
+  #sheet-delete-split.open {
+    transform: translateY(0);
+  }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    max-width: 480px; margin: 0 auto;
+    background: var(--bg);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    z-index: 201;
+    max-height: 92dvh;
+    overflow-y: auto;
+    transform: translateY(100%);
+    transition: transform 0.35s cubic-bezier(0.32, 0.72, 0, 1);
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+  }
+  .sheet.open { transform: translateY(0); }
+  .sheet-handle {
+    width: 40px; height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin: 12px auto 20px;
+  }
+  .sheet-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 20px 16px;
+  }
+  .sheet-title { font-family: var(--font-display); font-size: 22px; }
+  .sheet-body { padding: 0 20px 24px; display: flex; flex-direction: column; gap: 18px; }
+
+  /* payer rows */
+  .payer-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    background: var(--white);
+    border-radius: var(--r-md);
+    border: 1.5px solid var(--border);
+    transition: border-color 0.15s;
+  }
+  .payer-row.selected { border-color: var(--accent); background: var(--accent-dim); }
+  .payer-check {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid var(--border);
+    background: var(--white);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; transition: all 0.15s;
+  }
+  .payer-row.selected .payer-check { background: var(--accent); border-color: var(--accent); }
+  .payer-check svg { width: 12px; height: 12px; stroke: var(--white); fill: none; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; display: none; }
+  .payer-row.selected .payer-check svg { display: block; }
+  .payer-name { flex: 1; font-size: 14px; font-weight: 500; }
+  .payer-amount-input {
+    width: 90px; padding: 6px 10px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--white);
+    font-family: var(--font-mono);
+    font-size: 14px; font-weight: 500;
+    color: var(--text);
+    text-align: right;
+  }
+  .payer-amount-input:focus { border-color: var(--accent); outline: none; }
+
+  /* split type segmented nav */
+  .split-type-seg {
+    display: flex;
+    background: var(--surface);
+    border-radius: var(--r-md);
+    padding: 3px;
+    gap: 2px;
+  }
+  .split-type-seg-btn {
+    flex: 1;
+    padding: 8px 4px;
+    border-radius: calc(var(--r-md) - 3px);
+    font-size: 13px; font-weight: 500;
+    color: var(--text-2);
+    background: transparent;
+    border: none; cursor: pointer;
+    transition: background 0.15s, color 0.15s, box-shadow 0.15s;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .split-type-seg-btn.selected {
+    background: var(--white);
+    color: var(--text);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+    font-weight: 600;
+  }
+
+  /* split detail rows */
+  .split-detail-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px;
+    background: var(--white);
+    border-radius: var(--r-md);
+    border: 1.5px solid var(--border);
+  }
+  .split-detail-name { flex: 1; font-size: 14px; font-weight: 500; }
+  .split-detail-input {
+    width: 80px; padding: 0 10px;
+    height: 34px;
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-sm);
+    background: var(--surface);
+    font-family: var(--font-mono);
+    font-size: 14px; font-weight: 500;
+    color: var(--text);
+    text-align: right;
+    box-sizing: border-box;
+  }
+  .split-detail-input:focus { border-color: var(--accent); outline: none; background: var(--white); }
+  /* hide native number spinners */
+  .split-detail-input::-webkit-outer-spin-button,
+  .split-detail-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .split-detail-input[type=number] { -moz-appearance: textfield; }
+  .split-detail-unit { font-family: var(--font-mono); font-size: 12px; color: var(--text-2); flex-shrink: 0; min-width: 16px; }
+  .share-calc {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--text-2);
+    flex-shrink: 0;
+    min-width: 52px;
+    text-align: right;
+    transition: color 0.15s;
+  }
+  .share-calc.has-value { color: var(--accent); }
+  .stepper-btn {
+    width: 34px; height: 34px; border-radius: 50%;
+    border: 1.5px solid var(--border);
+    background: var(--white);
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; cursor: pointer;
+    font-size: 16px; font-weight: 400; color: var(--text);
+    line-height: 1;
+    transition: background 0.12s, border-color 0.12s, color 0.12s;
+    user-select: none;
+  }
+  .stepper-btn:hover { background: var(--accent); border-color: var(--accent); color: var(--white); }
+  .stepper-btn:active { transform: scale(0.92); }
+
+  /* totals validation */
+  .split-total-bar {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 10px 14px;
+    background: var(--surface);
+    border-radius: var(--r-md);
+    font-family: var(--font-mono); font-size: 13px;
+  }
+  .split-total-bar.valid { background: #E8F5E9; color: #2E7D32; }
+  .split-total-bar.invalid { background: #FFEBEE; color: #C62828; }
+
+  /* ── JOIN SCREEN ───────────────────────────────────────────────────── */
+  .join-body { padding: 0 20px 32px; }
+  .name-pick-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
+  .name-pick-card {
+    padding: 14px;
+    background: var(--white);
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-md);
+    cursor: pointer; transition: all 0.15s;
+    text-align: center;
+  }
+  .name-pick-card:hover { border-color: var(--text-2); }
+  .name-pick-card.selected { border-color: var(--accent); background: var(--accent-dim); }
+  .name-pick-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    background: var(--surface);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700; color: var(--text-2);
+    margin: 0 auto 8px;
+    transition: all 0.15s;
+  }
+  .name-pick-card.selected .name-pick-avatar { background: var(--accent); color: var(--white); }
+  .name-pick-label { font-size: 13px; font-weight: 600; color: var(--text); }
+
+  /* ── UTILITY ───────────────────────────────────────────────────────── */
+  .divider { height: 1px; background: var(--border); margin: 4px 0; }
+  .flex-between { display: flex; justify-content: space-between; align-items: center; }
+  .mt-4 { margin-top: 4px; }
+  .mt-8 { margin-top: 8px; }
+  .mt-16 { margin-top: 16px; }
+
+  .toast {
+    position: fixed; bottom: 90px; left: 50%; transform: translateX(-50%) translateY(12px);
+    background: var(--dark); color: var(--white);
+    padding: 10px 20px; border-radius: var(--r-pill);
+    font-size: 13px; font-weight: 500;
+    opacity: 0; pointer-events: none;
+    transition: all 0.25s;
+    z-index: 999; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Firebase notice */
+  .firebase-notice {
+    margin: 0 20px 16px;
+    padding: 12px 14px;
+    background: #FFF8E1;
+    border-radius: var(--r-md);
+    border: 1.5px solid #FFE082;
+    font-size: 12px;
+    color: #795548;
+    line-height: 1.5;
+  }
+  .firebase-notice strong { color: #5D4037; }
+
+  /* spinner */
+  .spinner {
+    width: 20px; height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    margin: 0 auto;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* page load animation */
+  .fade-in { animation: fadeUp 0.4s ease both; }
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .stagger-1 { animation-delay: 0.05s; }
+  .stagger-2 { animation-delay: 0.10s; }
+  .stagger-3 { animation-delay: 0.15s; }
+  .stagger-4 { animation-delay: 0.20s; }
+
+  @media (prefers-color-scheme: dark) {
+    /* keep light theme — this is a deliberate warm-light app */
+  }
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- ══ HOME SCREEN ══════════════════════════════════════════════════ -->
+  <div class="screen active" id="screen-home">
+    <div class="nav" style="justify-content:space-between">
+      <div class="nav-title" style="font-size:22px;letter-spacing:-0.01em">Split<em style="font-style:italic;color:var(--accent);font-family:var(--font-display)">Second</em></div>
+      <button class="nav-btn" id="btn-open-settings" title="Settings">
+        <svg viewBox="0 0 24 24" stroke="var(--text)" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </div>
+
+    <div class="hero fade-in">
+      <div class="hero-eyebrow">No fuss. No apps. No awkward math.</div>
+      <div class="hero-title">Split it <em>fast,</em><br>settle up easy.</div>
+      <div class="hero-sub">Dinner, outings, road trips — sorted in seconds.</div>
+    </div>
+
+    <div id="firebase-notice-home" class="firebase-notice" style="display:none">
+      <strong>⚡ Demo mode:</strong> Firebase isn't configured yet — splits are saved locally only and share links won't sync in real-time. Swap in your Firebase config to unlock live sync.
+    </div>
+
+    <div style="padding:0 20px">
+      <button class="btn-primary fade-in stagger-1" id="btn-new-split">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Start a Split
+      </button>
+    </div>
+
+    <div class="section-header fade-in stagger-2" style="margin-top:32px">
+      <span class="section-title">Recent Splits</span>
+    </div>
+
+    <div class="activity-list fade-in stagger-3" id="activity-list">
+      <div class="empty-state">
+        <div class="empty-icon">🍽</div>
+        <div>No splits yet. Start one and<br>we'll keep track of them here.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ SETUP SCREEN ═════════════════════════════════════════════════ -->
+  <div class="screen" id="screen-setup">
+    <div class="nav">
+      <button class="nav-btn" id="btn-setup-back">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="nav-center">
+        <div class="nav-title">New Split</div>
+      </div>
+      <div style="width:38px"></div>
+    </div>
+
+    <div class="setup-body" id="setup-step-1">
+      <div class="field-group">
+        <label class="field-label">Split name</label>
+        <input class="field-input" id="split-name-input" type="text" placeholder="e.g. Sunday Brunch">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">Currency</label>
+        <div class="currency-chips" id="split-currency-chips">
+          <div class="chip active" data-currency="₹ INR">₹ INR</div>
+          <div class="chip" data-currency="$ USD">$ USD</div>
+          <div class="chip" data-currency="€ EUR">€ EUR</div>
+          <div class="chip" data-currency="£ GBP">£ GBP</div>
+          <div class="chip" data-currency="د.إ AED">AED</div>
+          <div class="chip" data-currency="S$ SGD">SGD</div>
+          <div class="chip" id="custom-currency-chip" data-currency="">+ Custom</div>
+        </div>
+        <input class="field-input mt-8" id="custom-currency-input" type="text" placeholder="e.g. ¥ JPY" style="display:none">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label">People in this split</label>
+        <div class="people-list" id="people-list"></div>
+        <button class="btn-secondary mt-8" id="btn-add-person">
+          <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Add Person
+        </button>
+      </div>
+
+      <button class="btn-primary" style="width:100%;margin:8px 0 0" id="btn-setup-next">
+        Start Split
+      </button>
+    </div>
+  </div>
+
+  <!-- ══ SPLIT SCREEN ══════════════════════════════════════════════════ -->
+  <div class="screen" id="screen-split">
+    <div class="nav">
+      <button class="nav-btn" id="btn-split-back">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="nav-center">
+        <div class="nav-title" id="split-screen-title">—</div>
+        <div class="nav-sub" id="split-screen-sub">0 people · ₹0</div>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="nav-btn" id="btn-delete-split" title="Delete split">
+          <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent)"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        </button>
+        <button class="nav-btn" id="btn-edit-people" title="Edit people">
+          <svg viewBox="0 0 24 24" stroke="var(--text)" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="expenses">Expenses</button>
+      <button class="tab-btn" data-tab="summary">Summary</button>
+      <button class="tab-btn" data-tab="share">Share</button>
+    </div>
+
+    <div class="tab-panel active" id="tab-expenses">
+      <div class="expenses-list" id="expenses-list">
+        <div class="empty-state">
+          <div class="empty-icon">🧾</div>
+          <div>No expenses yet.<br>Tap + to add the first one.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-summary">
+      <div id="summary-content">
+        <div class="empty-state" style="padding-top:40px">
+          <div class="empty-icon">📊</div>
+          <div>Add expenses to see<br>who owes what.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tab-panel" id="tab-share">
+      <div class="share-panel">
+        <div class="share-card">
+          <div class="share-title">Share this split</div>
+          <div class="share-sub">Anyone with the link can view & add expenses</div>
+          <canvas id="qr-canvas" width="180" height="180"></canvas>
+          <div class="share-url">
+            <div class="share-url-text" id="share-url-text">Generating link…</div>
+            <button class="copy-btn" id="btn-copy-link">Copy</button>
+          </div>
+          <div style="font-size:12px; color:var(--text-2); line-height:1.6">
+            People who scan or open the link can pick their name from the group or add themselves.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FAB -->
+    <button class="fab" id="fab-add-expense">
+      <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    </button>
+  </div>
+
+  <!-- ══ JOIN SCREEN ═══════════════════════════════════════════════════ -->
+  <div class="screen" id="screen-join">
+    <div class="nav">
+      <div style="width:38px"></div>
+      <div class="nav-center">
+        <div class="nav-title">Join Split</div>
+        <div class="nav-sub" id="join-split-name">Loading…</div>
+      </div>
+      <div style="width:38px"></div>
+    </div>
+    <div class="join-body">
+      <div class="field-label" style="margin-bottom:12px">Who are you?</div>
+      <div class="name-pick-grid" id="join-name-grid"></div>
+      <div class="field-group">
+        <label class="field-label">Or enter your name</label>
+        <input class="field-input" id="join-name-input" type="text" placeholder="Your name">
+      </div>
+      <button class="btn-primary" style="width:100%;margin:16px 0 0" id="btn-join-confirm">Join & View Split</button>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<!-- ══ BOTTOM SHEET — EDIT PEOPLE ════════════════════════════════════ -->
+<div class="sheet-backdrop" id="sheet-backdrop-people"></div>
+<div class="sheet" id="sheet-people">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <div class="sheet-title">People</div>
+    <button class="nav-btn" id="btn-sheet-people-close">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <div class="field-group">
+      <div class="people-edit-list" id="people-edit-list"></div>
+      <button class="btn-primary mt-8" style="width:100%;margin:8px 0 0" id="btn-people-add">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add Person
+      </button>
+    </div>
+    <button id="btn-people-info" style="display:flex;align-items:center;gap:6px;background:none;border:none;padding:2px 0;cursor:pointer;color:var(--text-2);font-size:12px;font-family:var(--font-mono)">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      How does editing people work?
+    </button>
+  </div>
+</div>
+
+<!-- ══ BOTTOM SHEET — PEOPLE INFO ════════════════════════════════════ -->
+<div class="sheet-backdrop" id="sheet-backdrop-people-info"></div>
+<div class="sheet" id="sheet-people-info">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <div class="sheet-title" style="font-size:18px">How editing works</div>
+    <button class="nav-btn" id="btn-sheet-people-info-close">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <div style="background:var(--surface);border-radius:var(--r-md);padding:14px 16px;display:flex;flex-direction:column;gap:12px">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="width:32px;height:32px;border-radius:8px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px">＋</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Adding a person</div>
+          <div style="font-size:12px;color:var(--text-2);line-height:1.5">Only affects expenses you add going forward. All past expenses remain unchanged.</div>
+        </div>
+      </div>
+      <div style="height:1px;background:var(--border)"></div>
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="width:32px;height:32px;border-radius:8px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px">✕</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Removing a person</div>
+          <div style="font-size:12px;color:var(--text-2);line-height:1.5">Hides them from future expense entry. Their name and amounts in past expenses are fully preserved.</div>
+        </div>
+      </div>
+      <div style="height:1px;background:var(--border)"></div>
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="width:32px;height:32px;border-radius:8px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;flex-shrink:0;font-size:14px">✎</div>
+        <div>
+          <div style="font-size:13px;font-weight:600;color:var(--text);margin-bottom:3px">Renaming a person</div>
+          <div style="font-size:12px;color:var(--text-2);line-height:1.5">Updates their name everywhere — past expenses, the summary, and the settlement list all reflect the new name.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BOTTOM SHEET — SETTINGS ════════════════════════════════════════ -->
+<div class="sheet-backdrop" id="sheet-backdrop-settings"></div>
+<div class="sheet" id="sheet-settings">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <div class="sheet-title">Settings</div>
+    <button class="nav-btn" id="btn-sheet-settings-close">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body">
+    <div class="field-group">
+      <label class="field-label">Your name</label>
+      <input class="field-input" id="settings-your-name" type="text" placeholder="e.g. Abhi" autocomplete="name">
+      <div style="font-size:12px;color:var(--text-2);margin-top:8px;line-height:1.5">Added as the first person whenever you start a new split.</div>
+    </div>
+    <div class="field-group">
+      <label class="field-label">Default currency</label>
+      <div class="currency-chips" id="currency-chips">
+        <div class="chip active" data-currency="₹ INR">₹ INR</div>
+        <div class="chip" data-currency="$ USD">$ USD</div>
+        <div class="chip" data-currency="€ EUR">€ EUR</div>
+        <div class="chip" data-currency="£ GBP">£ GBP</div>
+        <div class="chip" data-currency="د.إ AED">AED</div>
+        <div class="chip" data-currency="S$ SGD">SGD</div>
+      </div>
+      <div style="font-size:12px;color:var(--text-2);margin-top:8px;line-height:1.5">Used as the default when starting a new split. You can still override it per split.</div>
+    </div>
+
+    <!-- Account section -->
+    <div class="field-group">
+      <label class="field-label">Account</label>
+      <div id="account-signed-out">
+        <div style="font-size:13px;color:var(--text-2);line-height:1.5;margin-bottom:12px">You're in guest mode. Create an account to access your splits from any device.</div>
+        <!-- Email sign up/in -->
+        <input class="field-input" id="auth-email" type="email" placeholder="Email" autocomplete="email" style="margin-bottom:8px">
+        <input class="field-input" id="auth-password" type="password" placeholder="Password" autocomplete="current-password" style="margin-bottom:8px">
+        <div style="display:flex;gap:8px">
+          <button class="btn-primary" style="flex:1" id="btn-auth-signup">Sign Up</button>
+          <button class="btn-secondary" style="flex:1" id="btn-auth-signin">Sign In</button>
+        </div>
+        <div style="text-align:center;margin:12px 0;font-size:12px;color:var(--text-2)">or</div>
+        <button class="btn-secondary" style="width:100%" id="btn-auth-google">
+          <svg width="18" height="18" viewBox="0 0 24 24" style="flex-shrink:0"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
+          Continue with Google
+        </button>
+        <div id="auth-error" style="display:none;font-size:12px;color:var(--accent);margin-top:8px;text-align:center"></div>
+      </div>
+      <div id="account-signed-in" style="display:none">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:var(--surface);border-radius:var(--r-md)">
+          <div class="person-avatar" style="width:40px;height:40px;font-size:15px" id="account-avatar">?</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:600;color:var(--text)" id="account-email-display">—</div>
+            <div style="font-size:12px;color:var(--text-2);font-family:var(--font-mono)">Signed in</div>
+          </div>
+          <button class="btn-icon" id="btn-auth-signout" title="Sign out">
+            <svg viewBox="0 0 24 24" fill="none" stroke="var(--text-2)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BOTTOM SHEET — ADD EXPENSE ════════════════════════════════════ -->
+<div class="sheet-backdrop" id="sheet-backdrop-expense"></div>
+<div class="sheet" id="sheet-expense">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <div class="sheet-title" id="expense-sheet-title">Add Expense</div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="nav-btn" id="btn-delete-expense" style="display:none" title="Delete expense">
+        <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="stroke:var(--accent)"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </button>
+      <button class="nav-btn" id="btn-sheet-expense-close">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="sheet-body" id="sheet-expense-body">
+    <div class="field-group">
+      <label class="field-label">Description</label>
+      <input class="field-input" id="expense-desc" type="text" placeholder="e.g. Dinner at Toit">
+      <div class="expense-suggestions" id="expense-suggestions">
+        <button class="exp-pill" data-label="Dinner"><span class="pill-emoji">🍽</span> Dinner</button>
+        <button class="exp-pill" data-label="Lunch"><span class="pill-emoji">🥗</span> Lunch</button>
+        <button class="exp-pill" data-label="Breakfast"><span class="pill-emoji">🍳</span> Breakfast</button>
+        <button class="exp-pill" data-label="Drinks"><span class="pill-emoji">🍺</span> Drinks</button>
+        <button class="exp-pill" data-label="Coffee"><span class="pill-emoji">☕</span> Coffee</button>
+        <button class="exp-pill" data-label="Snacks"><span class="pill-emoji">🍿</span> Snacks</button>
+        <button class="exp-pill" data-label="Groceries"><span class="pill-emoji">🛒</span> Groceries</button>
+        <button class="exp-pill" data-label="Taxi / Cab"><span class="pill-emoji">🚕</span> Taxi / Cab</button>
+        <button class="exp-pill" data-label="Petrol"><span class="pill-emoji">⛽</span> Petrol</button>
+        <button class="exp-pill" data-label="Parking"><span class="pill-emoji">🅿️</span> Parking</button>
+        <button class="exp-pill" data-label="Hotel"><span class="pill-emoji">🏨</span> Hotel</button>
+        <button class="exp-pill" data-label="Flights"><span class="pill-emoji">✈️</span> Flights</button>
+        <button class="exp-pill" data-label="Tickets"><span class="pill-emoji">🎟</span> Tickets</button>
+        <button class="exp-pill" data-label="Activities"><span class="pill-emoji">🏄</span> Activities</button>
+        <button class="exp-pill" data-label="Shopping"><span class="pill-emoji">🛍</span> Shopping</button>
+        <button class="exp-pill" data-label="Medicine"><span class="pill-emoji">💊</span> Medicine</button>
+      </div>
+    </div>
+    <!-- Payers -->
+    <div class="field-group">
+      <label class="field-label">Who paid? <span style="font-weight:400;color:var(--text-2)">(enter amount paid)</span></label>
+      <div id="payers-list"></div>
+      <div class="split-total-bar mt-8" id="payers-running-total" style="display:none">
+        <span>Total Amount</span>
+        <span id="payers-running-val" style="font-weight:600">—</span>
+      </div>
+    </div>
+    <!-- Hidden total — derived from payer inputs -->
+    <input type="hidden" id="expense-amount">
+
+    <!-- Split type -->
+    <div class="field-group">
+      <label class="field-label">How to split</label>
+      <div class="split-type-seg">
+        <button class="split-type-seg-btn selected" data-split="equal">Equal</button>
+        <button class="split-type-seg-btn" data-split="shares">Shares</button>
+        <button class="split-type-seg-btn" data-split="exact">Exact</button>
+        <button class="split-type-seg-btn" data-split="percent">Percentage</button>
+      </div>
+      <div id="split-type-explainer" style="font-size:12px;color:var(--text-2);line-height:1.5;padding:2px 2px 0;font-family:var(--font-mono)">Everyone pays the same amount.</div>
+    </div>
+
+    <!-- Split detail rows -->
+    <div class="field-group" id="split-detail-section" style="display:none">
+      <label class="field-label" id="split-detail-label">Split detail</label>
+      <div id="split-detail-rows"></div>
+      <div class="split-total-bar mt-8" id="split-total-bar">
+        <span id="split-total-label">Total</span>
+        <span id="split-total-val">—</span>
+      </div>
+    </div>
+
+    <button class="btn-primary" style="width:100%;margin:8px 0 0" id="btn-save-expense">Save Expense</button>
+  </div>
+</div>
+
+<!-- ══ BOTTOM SHEET — DELETE SPLIT CONFIRM ═══════════════════════════ -->
+<div class="sheet-backdrop" id="sheet-backdrop-delete-split"></div>
+<div class="sheet" id="sheet-delete-split">
+  <div class="sheet-handle"></div>
+  <div class="sheet-body" style="padding-top:8px;gap:12px">
+    <div style="text-align:center;padding:8px 0 20px">
+      <div style="width:48px;height:48px;border-radius:50%;background:rgba(232,71,26,0.1);display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </div>
+      <div style="font-family:var(--font-display);font-size:22px;margin-bottom:8px">Delete this split?</div>
+      <div style="font-size:14px;color:var(--text-2);line-height:1.5" id="delete-split-desc">All expenses and settlements will be permanently removed.</div>
+    </div>
+    <button class="btn-primary" style="width:100%;margin:0;background:#C62828;box-shadow:0 4px 16px rgba(198,40,40,0.3)" id="btn-confirm-delete-split">Delete Split</button>
+    <button style="width:100%;margin:0;padding:13px;border-radius:var(--r-pill);border:1.5px solid var(--border);background:var(--white);font-size:15px;font-weight:600;color:var(--text-2);cursor:pointer;font-family:var(--font-body)" id="btn-cancel-delete-split">Cancel</button>
+  </div>
+</div>
+
+<!-- ══ BOTTOM SHEET — DELETE CONFIRM ═════════════════════════════════ -->
+<div class="sheet-backdrop" id="sheet-backdrop-delete"></div>
+<div class="sheet" id="sheet-delete-confirm">
+  <div class="sheet-handle"></div>
+  <div class="sheet-body" style="padding-top:8px;gap:12px">
+    <div style="text-align:center;padding:8px 0 20px">
+      <div style="width:48px;height:48px;border-radius:50%;background:rgba(232,71,26,0.1);display:flex;align-items:center;justify-content:center;margin:0 auto 14px">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+      </div>
+      <div style="font-family:var(--font-display);font-size:22px;margin-bottom:8px">Delete this expense?</div>
+      <div style="font-size:14px;color:var(--text-2);line-height:1.5" id="delete-confirm-desc">This will remove the expense and update the summary.</div>
+    </div>
+    <button class="btn-primary" style="width:100%;margin:0;background:#C62828;box-shadow:0 4px 16px rgba(198,40,40,0.3)" id="btn-confirm-delete">Delete Expense</button>
+    <button style="width:100%;margin:0;padding:13px;border-radius:var(--r-pill);border:1.5px solid var(--border);background:var(--white);font-size:15px;font-weight:600;color:var(--text-2);cursor:pointer" id="btn-cancel-delete">Cancel</button>
+  </div>
+</div>
+
+<!-- ══ BOTTOM SHEET — SUMMARY IMAGE ══════════════════════════════════ -->
+<div class="sheet-backdrop" id="sheet-backdrop-img"></div>
+<div class="sheet" id="sheet-img-preview">
+  <div class="sheet-handle"></div>
+  <div class="sheet-header">
+    <div class="sheet-title">Share Summary</div>
+    <button class="nav-btn" id="btn-sheet-img-close">
+      <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div class="sheet-body" style="align-items:center">
+    <canvas id="summary-img-canvas"></canvas>
+    <div class="img-action-row">
+      <button class="btn-primary" id="btn-img-download">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download
+      </button>
+      <button class="btn-primary" id="btn-img-share" style="display:none">
+        <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        Share
+      </button>
+    </div>
+    <div style="font-size:11px;color:var(--text-2);text-align:center;font-family:var(--font-mono);margin-top:4px">Long-press the image to save on mobile</div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<!-- QR Lib (tiny, no deps) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<!-- html2canvas for DOM snapshot -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+<script>
+// ── STATE ────────────────────────────────────────────────────────────────────
+const state = {
+  defaultCurrency: '₹ INR',
+  yourName: localStorage.getItem('qs_your_name') || '',
+  currentSplitId: null,
+  currentSplit: null,
+  viewerName: null,
+  splits: [],
+  fbListener: null,
+};
+
+const SPLIT_NAMES = [
+  'Monsoon Dinner','Bandra Outing','Sunday Brunch','Road Trip Fuel',
+  'Beach Day','Late Night Eats','Rooftop Drinks','Movie Night',
+  'Goa Getaway','Weekend Market','Office Lunch','Birthday Dinner',
+  'Trek Snacks','Airport Run','Gallery Hop',
+];
+
+// ── HELPERS ──────────────────────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const el = (tag, cls, html='') => { const e = document.createElement(tag); if(cls) e.className=cls; if(html) e.innerHTML=html; return e; };
+
+function toast(msg) {
+  const t = $('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2400);
+}
+
+function currencySymbol(c) {
+  if (!c) return '₹';
+  const m = c.match(/^([^\s]+)/);
+  return m ? m[1] : c;
+}
+
+function formatAmt(amt, currency) {
+  const sym = currencySymbol(currency || state.currentSplit?.currency || state.defaultCurrency);
+  return `${sym}${Number(amt).toFixed(2)}`;
+}
+
+function randomName() {
+  return SPLIT_NAMES[Math.floor(Math.random() * SPLIT_NAMES.length)];
+}
+
+function avatarInitial(name) {
+  if (!name) return '?';
+  const words = name.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 1) return words[0][0].toUpperCase();
+  return (words[0][0] + words[words.length - 1][0]).toUpperCase();
+}
+
+function genId() {
+  return Math.random().toString(36).slice(2, 9);
+}
+
+// ── SCREEN ROUTER ─────────────────────────────────────────────────────────────
+let currentScreen = 'home';
+
+function showScreen(id, back=false) {
+  const prev = document.querySelector('.screen.active');
+  const next = $('screen-' + id);
+  if (!next || prev === next) return;
+  if (prev) { prev.classList.remove('active'); if (!back) { prev.classList.add('exit-left'); setTimeout(() => prev.classList.remove('exit-left'), 300); } }
+  next.classList.add('active');
+  next.scrollTop = 0;
+  currentScreen = id;
+}
+
+// ── FIREBASE HELPERS ──────────────────────────────────────────────────────────
+function fbReady() { return window._fb && window._fb.ready; }
+
+async function fbSaveSplit(split) {
+  // Stamp ownerId on first save if we have a UID
+  if (!split.ownerId && window._fb?.uid) split.ownerId = window._fb.uid;
+  if (!fbReady()) { lsSaveSplit(split); return; }
+  const { db, ref, set } = window._fb;
+  try { await set(ref(db, `splits/${split.id}`), split); lsSaveSplit(split); }
+  catch(e) { console.warn('FB write failed', e); lsSaveSplit(split); }
+}
+
+function fbListenSplit(id, cb) {
+  if (!fbReady()) { cb(lsGetSplit(id)); return () => {}; }
+  const { db, ref, onValue } = window._fb;
+  const r = ref(db, `splits/${id}`);
+  const unsub = onValue(r, snap => { cb(snap.val()); });
+  return unsub;
+}
+
+// ── LOCALSTORAGE FALLBACK ─────────────────────────────────────────────────────
+function lsSaveSplit(split) {
+  const all = lsGetAll();
+  const idx = all.findIndex(s => s.id === split.id);
+  if (idx >= 0) all[idx] = split; else all.unshift(split);
+  localStorage.setItem('qs_splits', JSON.stringify(all));
+}
+
+function lsGetAll() {
+  try { return JSON.parse(localStorage.getItem('qs_splits') || '[]'); } catch { return []; }
+}
+
+function lsGetSplit(id) {
+  return lsGetAll().find(s => s.id === id) || null;
+}
+
+// ── HOME ──────────────────────────────────────────────────────────────────────
+function initHome() {
+  if (!fbReady()) $('firebase-notice-home').style.display = 'block';
+
+  renderActivityList();
+
+  // settings sheet
+  $('btn-open-settings').addEventListener('click', () => {
+    $('settings-your-name').value = state.yourName;
+    updateAccountUI();
+    $('sheet-backdrop-settings').classList.add('open');
+    $('sheet-settings').classList.add('open');
+  });
+  $('btn-sheet-settings-close').addEventListener('click', closeSettingsSheet);
+  $('sheet-backdrop-settings').addEventListener('click', closeSettingsSheet);
+
+  // save your name on input
+  $('settings-your-name').addEventListener('input', e => {
+    state.yourName = e.target.value.trim();
+    localStorage.setItem('qs_your_name', state.yourName);
+  });
+
+  // currency selection inside settings sheet
+  $('currency-chips').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip) return;
+    $('currency-chips').querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    state.defaultCurrency = chip.dataset.currency;
+    toast(`Default currency set to ${chip.dataset.currency}`);
+  });
+
+  $('btn-new-split').addEventListener('click', () => {
+    initSetup();
+    showScreen('setup');
+  });
+}
+
+function closeSettingsSheet() {
+  $('sheet-backdrop-settings').classList.remove('open');
+  $('sheet-settings').classList.remove('open');
+}
+
+// ── AUTH UI ───────────────────────────────────────────────────────────────────
+function updateAccountUI() {
+  const user = window._fb?.currentUser;
+  const signedIn = user && !user.isAnonymous;
+  $('account-signed-out').style.display = signedIn ? 'none' : 'block';
+  $('account-signed-in').style.display  = signedIn ? 'block' : 'none';
+  if (signedIn) {
+    const email = user.email || user.displayName || 'Signed in';
+    $('account-email-display').textContent = email;
+    $('account-avatar').textContent = avatarInitial(email.split('@')[0]);
+  }
+  if ($('auth-error')) { $('auth-error').style.display = 'none'; }
+}
+
+function showAuthError(msg) {
+  const el = $('auth-error');
+  if (!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+$('btn-auth-signup').addEventListener('click', async () => {
+  if (!fbReady()) { toast('Firebase not configured'); return; }
+  const email = $('auth-email').value.trim();
+  const password = $('auth-password').value;
+  if (!email || !password) { showAuthError('Enter email and password'); return; }
+  const { auth, currentUser, linkWithCredential, EmailAuthProvider,
+          createUserWithEmailAndPassword } = window._fb;
+  try {
+    if (currentUser?.isAnonymous) {
+      // Upgrade anonymous account → real account
+      const credential = EmailAuthProvider.credential(email, password);
+      await linkWithCredential(currentUser, credential);
+    } else {
+      await createUserWithEmailAndPassword(auth, email, password);
+    }
+    window._fb.currentUser = auth.currentUser;
+    window._fb.isAnonymous = false;
+    updateAccountUI();
+    toast('Account created ✓');
+  } catch(e) {
+    const msgs = {
+      'auth/email-already-in-use': 'That email is already registered. Try signing in.',
+      'auth/weak-password': 'Password must be at least 6 characters.',
+      'auth/invalid-email': 'Please enter a valid email address.',
+    };
+    showAuthError(msgs[e.code] || e.message);
+  }
+});
+
+$('btn-auth-signin').addEventListener('click', async () => {
+  if (!fbReady()) { toast('Firebase not configured'); return; }
+  const email = $('auth-email').value.trim();
+  const password = $('auth-password').value;
+  if (!email || !password) { showAuthError('Enter email and password'); return; }
+  const { auth, signInWithEmailAndPassword } = window._fb;
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    window._fb.currentUser = auth.currentUser;
+    window._fb.uid = auth.currentUser.uid;
+    window._fb.isAnonymous = false;
+    updateAccountUI();
+    renderActivityList();
+    toast('Signed in ✓');
+  } catch(e) {
+    const msgs = {
+      'auth/user-not-found': 'No account found with that email.',
+      'auth/wrong-password': 'Incorrect password.',
+      'auth/invalid-credential': 'Incorrect email or password.',
+      'auth/invalid-email': 'Please enter a valid email address.',
+    };
+    showAuthError(msgs[e.code] || e.message);
+  }
+});
+
+$('btn-auth-google').addEventListener('click', async () => {
+  if (!fbReady()) { toast('Firebase not configured'); return; }
+  const { auth, currentUser, GoogleAuthProvider, signInWithPopup,
+          linkWithCredential } = window._fb;
+  const provider = new GoogleAuthProvider();
+  try {
+    if (currentUser?.isAnonymous) {
+      await linkWithCredential(currentUser, await signInWithPopup(auth, provider).then(r => r.user.getIdToken()));
+    }
+    await signInWithPopup(auth, provider);
+    window._fb.currentUser = auth.currentUser;
+    window._fb.uid = auth.currentUser.uid;
+    window._fb.isAnonymous = false;
+    updateAccountUI();
+    renderActivityList();
+    toast('Signed in with Google ✓');
+  } catch(e) {
+    if (e.code !== 'auth/popup-closed-by-user') showAuthError(e.message);
+  }
+});
+
+$('btn-auth-signout').addEventListener('click', async () => {
+  if (!fbReady()) return;
+  const { auth, signOut } = window._fb;
+  await signOut(auth);
+  // Re-sign in as anonymous
+  const { signInAnonymously } = await import("https://www.gstatic.com/firebasejs/12.14.0/firebase-auth.js");
+  await signInAnonymously(auth);
+  window._fb.currentUser = auth.currentUser;
+  window._fb.uid = auth.currentUser?.uid;
+  window._fb.isAnonymous = true;
+  updateAccountUI();
+  renderActivityList();
+  toast('Signed out');
+});
+
+function renderActivityList() {
+  const list = $('activity-list');
+  const splits = lsGetAll();
+  if (!splits.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🍽</div><div>No splits yet. Start one and<br>we'll keep track of them here.</div></div>`;
+    return;
+  }
+  list.innerHTML = '';
+  const EMOJIS = ['🍽','✈️','🍺','🎬','🛣️','🌊','🏔️','🎉','🍕','☕'];
+  splits.forEach((s, i) => {
+    const total = (s.expenses||[]).reduce((a,e) => a+Number(e.amount),0);
+    const card = el('div','activity-card');
+    card.innerHTML = `
+      <div class="activity-icon">${EMOJIS[i % EMOJIS.length]}</div>
+      <div class="activity-info">
+        <div class="activity-name">${s.name}</div>
+        <div class="activity-meta">${s.people?.length||0} people · ${new Date(s.createdAt).toLocaleDateString('en-IN',{day:'numeric',month:'short'})}</div>
+      </div>
+      <div class="activity-amount">${formatAmt(total, s.currency)}<span>${s.expenses?.length||0} expenses</span></div>
+      <button class="activity-quick-add" title="Add expense">
+        <svg viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    `;
+    // Card click → open split
+    card.addEventListener('click', e => {
+      if (e.target.closest('.activity-quick-add')) return;
+      openSplit(s.id);
+    });
+    // Quick-add button → load split silently, open expense sheet
+    card.querySelector('.activity-quick-add').addEventListener('click', async e => {
+      e.stopPropagation();
+      state.currentSplitId = s.id;
+      state.currentSplit = s;
+      // ensure live listener is active so save propagates
+      if (state.fbListener) { try { state.fbListener(); } catch(_) {} }
+      state.fbListener = fbListenSplit(s.id, split => {
+        if (split) state.currentSplit = split;
+      });
+      openExpenseSheet();
+    });
+    list.appendChild(card);
+  });
+}
+
+// ── SETUP ─────────────────────────────────────────────────────────────────────
+let setupPeople = [];
+let setupCurrency = '';
+
+function initSetup() {
+  setupPeople = [];
+  setupCurrency = state.defaultCurrency;
+
+  $('split-name-input').value = randomName();
+
+  // sync currency chips to default
+  $('split-currency-chips').querySelectorAll('.chip').forEach(c => {
+    c.classList.toggle('active', c.dataset.currency === setupCurrency);
+  });
+
+  renderPeopleList();
+
+  // pre-populate with your name if set, then add blank slots
+  if (state.yourName) {
+    addPerson(state.yourName);
+    addPerson('');
+  } else {
+    addPerson(''); addPerson('');
+  }
+}
+
+function addPerson(name='') {
+  setupPeople.push({ id: genId(), name });
+  renderPeopleList();
+}
+
+function renderPeopleList() {
+  const list = $('people-list');
+  list.innerHTML = '';
+  setupPeople.forEach((p, i) => {
+    const row = el('div','person-row');
+    row.innerHTML = `
+      <div class="person-avatar">${p.name ? avatarInitial(p.name) : (i+1)}</div>
+      <input class="person-name-input" type="text" placeholder="Person ${i+1}" value="${p.name}">
+      <button class="btn-icon danger">
+        <svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    `;
+    const inp = row.querySelector('input');
+    inp.addEventListener('input', () => {
+      setupPeople[i].name = inp.value;
+      row.querySelector('.person-avatar').textContent = inp.value ? avatarInitial(inp.value) : (i+1);
+    });
+    row.querySelector('.btn-icon').addEventListener('click', () => {
+      setupPeople.splice(i, 1);
+      renderPeopleList();
+    });
+    list.appendChild(row);
+  });
+}
+
+$('btn-add-person').addEventListener('click', () => addPerson(''));
+
+// currency in setup
+$('split-currency-chips').addEventListener('click', e => {
+  const chip = e.target.closest('.chip');
+  if (!chip) return;
+  if (chip.id === 'custom-currency-chip') {
+    $('custom-currency-input').style.display = 'block';
+    $('custom-currency-input').focus();
+    $('split-currency-chips').querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    return;
+  }
+  $('custom-currency-input').style.display = 'none';
+  $('split-currency-chips').querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  chip.classList.add('active');
+  setupCurrency = chip.dataset.currency;
+});
+
+$('custom-currency-input').addEventListener('input', e => {
+  setupCurrency = e.target.value;
+});
+
+$('btn-setup-back').addEventListener('click', () => { showScreen('home', true); renderActivityList(); });
+
+$('btn-setup-next').addEventListener('click', async () => {
+  const name = $('split-name-input').value.trim() || randomName();
+  const people = setupPeople.map(p => ({ ...p, name: p.name.trim() || `Person ${setupPeople.indexOf(p)+1}` }));
+
+  if (people.length < 2) { toast('Add at least 2 people'); return; }
+
+  const split = {
+    id: genId(),
+    name,
+    currency: setupCurrency || state.defaultCurrency,
+    people,
+    expenses: [],
+    createdAt: Date.now(),
+  };
+
+  await fbSaveSplit(split);
+  state.currentSplitId = split.id;
+  state.currentSplit = split;
+  state.viewerName = null;
+
+  openSplit(split.id);
+});
+
+// ── SPLIT SCREEN ──────────────────────────────────────────────────────────────
+function openSplit(id) {
+  // unsubscribe previous listener
+  if (state.fbListener) { try { state.fbListener(); } catch(_) {} state.fbListener = null; }
+
+  state.currentSplitId = id;
+
+  // Listen for realtime updates
+  state.fbListener = fbListenSplit(id, (split) => {
+    if (!split) { toast('Split not found'); return; }
+    state.currentSplit = split;
+    renderSplitScreen(split);
+  });
+
+  showScreen('split');
+}
+
+function renderSplitScreen(split) {
+  $('split-screen-title').textContent = split.name;
+  const total = (split.expenses||[]).reduce((a,e) => a+Number(e.amount),0);
+  $('split-screen-sub').textContent = `${split.people?.length||0} people · ${formatAmt(total, split.currency)}`;
+
+  renderExpenses(split);
+  renderSummary(split);
+  renderShare(split);
+}
+
+// ── EXPENSES TAB ──────────────────────────────────────────────────────────────
+
+// ── EDIT PEOPLE SHEET ─────────────────────────────────────────────────────────
+$('btn-edit-people').addEventListener('click', openPeopleSheet);
+$('btn-sheet-people-close').addEventListener('click', closePeopleSheet);
+$('sheet-backdrop-people').addEventListener('click', closePeopleSheet);
+
+// people info sheet
+document.addEventListener('click', e => {
+  if (e.target.closest('#btn-people-info')) {
+    $('sheet-backdrop-people-info').classList.add('open');
+    $('sheet-people-info').classList.add('open');
+  }
+  if (e.target.closest('#btn-sheet-people-info-close') || e.target === $('sheet-backdrop-people-info')) {
+    $('sheet-backdrop-people-info').classList.remove('open');
+    $('sheet-people-info').classList.remove('open');
+  }
+});
+$('btn-people-add').addEventListener('click', () => {
+  const split = state.currentSplit;
+  if (!split) return;
+  const newPerson = { id: genId(), name: '' };
+  split.people = [...(split.people||[]), newPerson];
+  renderPeopleEditList(split);
+  // focus new row
+  setTimeout(() => {
+    const inputs = $('people-edit-list').querySelectorAll('.people-edit-name');
+    inputs[inputs.length - 1]?.focus();
+  }, 50);
+});
+
+function openPeopleSheet() {
+  const split = state.currentSplit;
+  if (!split) return;
+  renderPeopleEditList(split);
+  $('sheet-backdrop-people').classList.add('open');
+  $('sheet-people').classList.add('open');
+}
+
+function closePeopleSheet() {
+  $('sheet-backdrop-people').classList.remove('open');
+  $('sheet-people').classList.remove('open');
+}
+
+function confirmRemove(row, name) {
+  return new Promise(resolve => {
+    // inject a confirmation bar into the row
+    const existing = row.querySelector('.confirm-bar');
+    if (existing) { existing.remove(); resolve(false); return; }
+
+    const bar = document.createElement('div');
+    bar.className = 'confirm-bar';
+    bar.style.cssText = `
+      position:absolute; inset:0; border-radius:inherit;
+      background: #FFF3F0;
+      border: 1.5px solid #E8471A;
+      display:flex; align-items:center; justify-content:space-between;
+      padding: 0 12px; gap:8px; z-index:10;
+    `;
+    bar.innerHTML = `
+      <span style="font-size:13px;font-weight:500;color:var(--text)">Remove ${name}?</span>
+      <div style="display:flex;gap:6px">
+        <button class="confirm-cancel" style="padding:5px 12px;border-radius:var(--r-pill);border:1.5px solid var(--border);background:var(--white);font-size:12px;font-weight:600;cursor:pointer">Cancel</button>
+        <button class="confirm-ok" style="padding:5px 12px;border-radius:var(--r-pill);background:var(--accent);border:none;color:white;font-size:12px;font-weight:600;cursor:pointer">Remove</button>
+      </div>
+    `;
+    row.style.position = 'relative';
+    row.appendChild(bar);
+
+    bar.querySelector('.confirm-cancel').addEventListener('click', () => { bar.remove(); resolve(false); });
+    bar.querySelector('.confirm-ok').addEventListener('click', () => { bar.remove(); resolve(true); });
+  });
+}
+
+function renderPeopleEditList(split) {
+  const list = $('people-edit-list');
+  list.innerHTML = '';
+  const removed = split.removedPeople || [];
+  const isNew   = split._newPeopleIds || [];
+
+  const allPeople = [
+    ...(split.people||[]).map(p => ({ ...p, active: true })),
+    ...removed.map(p => ({ ...p, active: false })),
+  ];
+
+  allPeople.forEach(p => {
+    const row = el('div', `people-edit-row${p.active ? '' : ' removed'}`);
+    row.dataset.id = p.id;
+
+    const avatar = el('div','person-avatar');
+    avatar.style.cssText = 'width:32px;height:32px;font-size:13px;flex-shrink:0';
+    avatar.textContent = avatarInitial(p.name || '?');
+
+    const inp = document.createElement('input');
+    inp.className = 'people-edit-name';
+    inp.type = 'text';
+    inp.value = p.name;
+    inp.placeholder = 'Name';
+    if (!p.active) inp.disabled = true;
+
+    inp.addEventListener('input', () => {
+      avatar.textContent = avatarInitial(inp.value || '?');
+    });
+
+    inp.addEventListener('blur', async () => {
+      const newName = inp.value.trim();
+      if (!newName || !p.active) return;
+      const split = state.currentSplit;
+      if (!split) return;
+      const person = (split.people||[]).find(x => x.id === p.id);
+      if (!person || person.name === newName) return;
+
+      const oldName = person.name;
+      // update in people list
+      person.name = newName;
+      // sweep all past expenses to rename
+      (split.expenses||[]).forEach(exp => {
+        (exp.payers||[]).forEach(py => { if (py.id === p.id) py.name = newName; });
+        (exp.splits||[]).forEach(s  => { if (s.id  === p.id) s.name  = newName; });
+      });
+      await fbSaveSplit(split);
+      toast(`Renamed to ${newName} ✓`);
+    });
+
+    // tag label
+    let tagText = '', tagClass = '';
+    if (!p.active) { tagText = 'removed'; tagClass = 'removed'; }
+    else if (isNew.includes(p.id)) { tagText = 'new'; tagClass = 'new'; }
+
+    const tag = tagText ? el('div', `people-edit-tag ${tagClass}`, tagText) : null;
+
+    // action button: remove (active) or restore (removed)
+    const actionBtn = el('button', 'btn-icon');
+    if (p.active) {
+      actionBtn.classList.add('danger');
+      actionBtn.title = 'Remove from future expenses';
+      actionBtn.innerHTML = `<svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>`;
+      actionBtn.addEventListener('click', async () => {
+        const split = state.currentSplit;
+        if (!split) return;
+        const personName = inp.value.trim() || p.name;
+        const confirmed = await confirmRemove(row, personName);
+        if (!confirmed) return;
+
+        // check if person appears in any past expense
+        const hasHistory = (split.expenses||[]).some(exp =>
+          (exp.payers||[]).some(py => py.id === p.id) ||
+          (exp.splits||[]).some(s  => s.id  === p.id)
+        );
+
+        split.people = (split.people||[]).filter(x => x.id !== p.id);
+        if (hasHistory) {
+          // keep in removedPeople so history is preserved and restore is possible
+          split.removedPeople = [...(split.removedPeople||[]), { id: p.id, name: personName }];
+          toast(`${personName} removed from future expenses`);
+        } else {
+          // no history — delete outright, no restore needed
+          toast(`${personName} removed`);
+        }
+        await fbSaveSplit(split);
+        renderPeopleEditList(split);
+      });
+    } else {
+      actionBtn.classList.add('btn-restore');
+      actionBtn.title = 'Restore to future expenses';
+      actionBtn.innerHTML = `<svg viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.5"/></svg>`;
+      actionBtn.addEventListener('click', async () => {
+        const split = state.currentSplit;
+        if (!split) return;
+        split.removedPeople = (split.removedPeople||[]).filter(x => x.id !== p.id);
+        split.people = [...(split.people||[]), { id: p.id, name: inp.value.trim() || p.name }];
+        await fbSaveSplit(split);
+        renderPeopleEditList(split);
+        toast(`${p.name} restored`);
+      });
+    }
+
+    row.appendChild(avatar);
+    row.appendChild(inp);
+    if (tag) row.appendChild(tag);
+    row.appendChild(actionBtn);
+    list.appendChild(row);
+  });
+}
+
+function renderExpenses(split) {
+  const list = $('expenses-list');
+  const expenses = split.expenses || [];
+  if (!expenses.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-icon">🧾</div><div>No expenses yet.<br>Tap + to add the first one.</div></div>`;
+    return;
+  }
+  list.innerHTML = '';
+  expenses.forEach(exp => {
+    const card = el('div','expense-card');
+
+    // payer summary: "Vedika (₹2,000)" or "Vedika (₹800), Abhi (₹400)"
+    const payerStr = (exp.payers||[])
+      .map(p => `${p.name} (${formatAmt(p.amount, split.currency)})`)
+      .join(', ');
+
+    // count only people actually sharing (non-zero owes)
+    const activeCount = (exp.splits||[]).filter(s => s.owes > 0.001).length;
+    const splitPhrases = { equal: 'equally', shares: 'by shares', exact: 'exact amounts', percent: 'by percentage' };
+    const splitPhrase = splitPhrases[exp.splitType] || 'equally';
+    const splitSummary = activeCount > 0 ? `Split ${splitPhrase} between ${activeCount}` : '';
+
+    card.innerHTML = `
+      <div class="expense-card-top">
+        <div style="flex:1;min-width:0">
+          <div class="expense-desc">${exp.desc || 'Expense'}</div>
+          <div class="expense-meta">${payerStr}</div>
+          <div class="expense-meta" style="margin-top:2px">${splitSummary}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;padding-top:1px">
+          <div class="expense-amount">${formatAmt(exp.amount, split.currency)}</div>
+        </div>
+      </div>
+    `;
+
+    card.style.cursor = 'pointer';
+    card.addEventListener('click', () => openExpenseSheet(exp.id));
+
+    list.appendChild(card);
+  });
+}
+
+// ── ADD EXPENSE SHEET ─────────────────────────────────────────────────────────
+let expenseSplitType = 'equal';
+
+$('fab-add-expense').addEventListener('click', () => openExpenseSheet());
+$('btn-sheet-expense-close').addEventListener('click', closeExpenseSheet);
+$('sheet-backdrop-expense').addEventListener('click', closeExpenseSheet);
+
+// suggestion pills
+$('expense-suggestions').addEventListener('click', e => {
+  const pill = e.target.closest('.exp-pill');
+  if (!pill) return;
+  const label = pill.dataset.label;
+  // toggle: tapping selected pill clears it
+  if (pill.classList.contains('selected')) {
+    pill.classList.remove('selected');
+    $('expense-desc').value = '';
+  } else {
+    document.querySelectorAll('#expense-suggestions .exp-pill').forEach(p => p.classList.remove('selected'));
+    pill.classList.add('selected');
+    $('expense-desc').value = label;
+    $('expense-desc').focus();
+  }
+});
+
+// typing manually deselects pills
+$('expense-desc').addEventListener('input', () => {
+  document.querySelectorAll('#expense-suggestions .exp-pill').forEach(p => p.classList.remove('selected'));
+});
+
+let editingExpenseId = null;
+
+// delete icon in sheet header — opens confirmation sheet
+$('btn-delete-expense').addEventListener('click', () => {
+  const split = state.currentSplit;
+  const exp = editingExpenseId ? (split?.expenses||[]).find(e => e.id === editingExpenseId) : null;
+  $('delete-confirm-desc').textContent = exp
+    ? `"${exp.desc || 'This expense'}" will be permanently removed and the summary will update.`
+    : 'This expense will be permanently removed.';
+  $('sheet-backdrop-delete').classList.add('open');
+  $('sheet-delete-confirm').classList.add('open');
+});
+
+$('btn-cancel-delete').addEventListener('click', () => {
+  $('sheet-backdrop-delete').classList.remove('open');
+  $('sheet-delete-confirm').classList.remove('open');
+});
+$('sheet-backdrop-delete').addEventListener('click', () => {
+  $('sheet-backdrop-delete').classList.remove('open');
+  $('sheet-delete-confirm').classList.remove('open');
+});
+
+$('btn-confirm-delete').addEventListener('click', async () => {
+  const split = state.currentSplit;
+  if (!split || !editingExpenseId) return;
+  split.expenses = (split.expenses||[]).filter(e => e.id !== editingExpenseId);
+  $('sheet-backdrop-delete').classList.remove('open');
+  $('sheet-delete-confirm').classList.remove('open');
+  editingExpenseId = null;
+  await fbSaveSplit(split);
+  closeExpenseSheet();
+  toast('Expense deleted');
+  renderSplitScreen(split);
+  if (currentScreen === 'home') renderActivityList();
+});
+
+function openExpenseSheet(expenseId = null) {
+  const split = state.currentSplit;
+  if (!split) return;
+
+  editingExpenseId = expenseId || null;
+  const exp = expenseId ? (split.expenses||[]).find(e => e.id === expenseId) : null;
+
+  // title
+  $('expense-sheet-title').textContent = exp ? 'Edit Expense' : 'Add Expense';
+  $('btn-save-expense').textContent = exp ? 'Save Changes' : 'Save Expense';
+  $('btn-delete-expense').style.display = exp ? 'flex' : 'none';
+
+  // description
+  $('expense-desc').value = exp ? (exp.desc || '') : '';
+  $('expense-amount').value = '';
+  $('payers-running-total').style.display = 'none';
+  document.querySelectorAll('#expense-suggestions .exp-pill').forEach(p => p.classList.remove('selected'));
+
+  // match pill if description matches
+  if (exp?.desc) {
+    document.querySelectorAll('#expense-suggestions .exp-pill').forEach(p => {
+      if (p.dataset.label === exp.desc) p.classList.add('selected');
+    });
+  }
+
+  // payers — render list then pre-select if editing
+  renderPayersList(split);
+  if (exp) {
+    (exp.payers||[]).forEach(payer => {
+      const row = $('payers-list').querySelector(`[data-person-id="${payer.id}"]`);
+      if (row) {
+        row.classList.add('selected');
+        row.querySelector('.payer-amount-input').value = payer.amount;
+      }
+    });
+    updatePayersTotal();
+  }
+
+  // split type
+  expenseSplitType = exp ? (exp.splitType || 'equal') : 'equal';
+  document.querySelectorAll('.split-type-seg-btn').forEach(c => c.classList.toggle('selected', c.dataset.split === expenseSplitType));
+  const explainerEl = document.getElementById('split-type-explainer');
+  if (explainerEl) explainerEl.textContent = splitExplainers[expenseSplitType] || '';
+
+  renderSplitDetailRows();
+  if (exp && expenseSplitType !== 'equal') {
+      const rows = $('split-detail-rows').querySelectorAll('.split-detail-row');
+      rows.forEach(row => {
+        const pid = row.dataset.personId;
+        const s = (exp.splits||[]).find(s => s.id === pid);
+        if (!s) return;
+        const inp = row.querySelector('input');
+        if (!inp) return;
+        if (expenseSplitType === 'shares') {
+          const total = (exp.splits||[]).reduce((a,x)=>a+x.owes,0);
+          inp.value = total > 0 ? Math.round((s.owes / total) * (exp.splits||[]).length) : 1;
+        } else if (expenseSplitType === 'percent') {
+          inp.value = ((s.owes / exp.amount) * 100).toFixed(1);
+        } else {
+          inp.value = s.owes.toFixed(2);
+        }
+      });
+      updateSplitDetail();
+    }
+
+  $('sheet-backdrop-expense').classList.add('open');
+  $('sheet-expense').classList.add('open');
+}
+
+function closeExpenseSheet() {
+  $('sheet-backdrop-expense').classList.remove('open');
+  $('sheet-expense').classList.remove('open');
+  editingExpenseId = null;
+}
+
+function activePeople(split) {
+  // Only people NOT in removedPeople
+  const removedIds = new Set((split.removedPeople||[]).map(p => p.id));
+  return (split.people||[]).filter(p => !removedIds.has(p.id));
+}
+
+function renderPayersList(split) {
+  const list = $('payers-list');
+  list.innerHTML = '';
+  activePeople(split).forEach(p => {
+    const row = el('div','payer-row');
+    row.dataset.personId = p.id;
+    row.innerHTML = `
+      <div class="payer-check"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <div class="payer-avatar person-avatar">${avatarInitial(p.name)}</div>
+      <div class="payer-name">${p.name}</div>
+      <input class="payer-amount-input" type="number" inputmode="decimal" placeholder="0.00" value="">
+    `;
+    row.addEventListener('click', e => {
+      if (e.target.tagName === 'INPUT') return;
+      row.classList.toggle('selected');
+      updatePayersTotal();
+    });
+    row.querySelector('.payer-amount-input').addEventListener('input', e => {
+      const hasValue = parseFloat(e.target.value) > 0;
+      row.classList.toggle('selected', hasValue);
+      updatePayersTotal();
+    });
+    list.appendChild(row);
+  });
+}
+
+function updatePayersTotal() {
+  let total = 0;
+  document.querySelectorAll('#payers-list .payer-row').forEach(row => {
+    const val = parseFloat(row.querySelector('.payer-amount-input').value) || 0;
+    if (val > 0) total += val;
+  });
+  // Write derived total into hidden input so the rest of the logic stays unchanged
+  $('expense-amount').value = total > 0 ? total : '';
+
+  // Show running total bar once anything is entered
+  const bar = $('payers-running-total');
+  if (total > 0) {
+    bar.style.display = 'flex';
+    $('payers-running-val').textContent = formatAmt(total);
+  } else {
+    bar.style.display = 'none';
+  }
+
+  updateSplitDetail();
+}
+
+
+const splitExplainers = {
+  equal:   'Everyone pays the same amount.',
+  shares:  'Assign share counts — someone with 2 shares pays twice as much as someone with 1.',
+  exact:   'Enter a specific amount for each person. Must add up to the total.',
+  percent: 'Enter a percentage for each person. Must add up to 100%.',
+};
+
+document.querySelectorAll('.split-type-seg-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.split-type-seg-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    expenseSplitType = btn.dataset.split;
+    const el = document.getElementById('split-type-explainer');
+    if (el) el.textContent = splitExplainers[expenseSplitType] || '';
+    renderSplitDetailRows();
+  });
+});
+
+function renderSplitDetailRows() {
+  const split = state.currentSplit;
+  if (!split) return;
+  const section = $('split-detail-section');
+  const rows = $('split-detail-rows');
+
+  section.style.display = 'block';
+
+  const labels = { shares: 'Shares', exact: 'Amount', percent: '%' };
+  $('split-detail-label').textContent = expenseSplitType === 'equal' ? 'Per person' : `Breakdown (${expenseSplitType})`;
+  $('split-total-label').textContent = expenseSplitType === 'percent' ? 'Total %' : 'Total';
+
+  rows.innerHTML = '';
+  const people = activePeople(split);
+  const expAmt = parseFloat($('expense-amount').value) || 0;
+
+  people.forEach(p => {
+    const row = el('div','split-detail-row');
+    row.dataset.personId = p.id;
+
+    if (expenseSplitType === 'equal') {
+      // read-only rows — placeholder box matches input height so rows don't jump
+      const each = people.length > 0 && expAmt > 0 ? (expAmt / people.length) : 0;
+      row.innerHTML = `
+        <div class="split-detail-name">${p.name}</div>
+        <div style="height:34px;padding:0 10px;border-radius:var(--r-sm);background:var(--surface);font-family:var(--font-mono);font-size:14px;font-weight:500;color:var(--text-2);min-width:80px;text-align:right;display:flex;align-items:center;justify-content:flex-end;box-sizing:border-box;border:1.5px solid transparent">${each > 0 ? formatAmt(each) : '—'}</div>
+      `;
+    } else if (expenseSplitType === 'shares') {
+      const defaultVal = 1;
+      row.innerHTML = `
+        <div class="split-detail-name">${p.name}</div>
+        <span class="share-calc">—</span>
+        <button class="stepper-btn stepper-minus" type="button">−</button>
+        <input class="split-detail-input" type="number" inputmode="numeric" value="${defaultVal}" placeholder="0" style="width:48px;text-align:center">
+        <button class="stepper-btn stepper-plus" type="button">+</button>
+      `;
+      const inp = row.querySelector('input');
+      row.querySelector('.stepper-minus').addEventListener('click', () => {
+        const v = Math.max(0, (parseFloat(inp.value) || 0) - 1);
+        inp.value = v;
+        inp.dispatchEvent(new Event('input'));
+      });
+      row.querySelector('.stepper-plus').addEventListener('click', () => {
+        const v = (parseFloat(inp.value) || 0) + 1;
+        inp.value = v;
+        inp.dispatchEvent(new Event('input'));
+      });
+      inp.addEventListener('input', updateSplitDetail);
+    } else {
+      const label = labels[expenseSplitType] || '';
+      const defaultVal = expenseSplitType === 'percent' ? (100/people.length).toFixed(1) : '';
+      row.innerHTML = `
+        <div class="split-detail-name">${p.name}</div>
+        <input class="split-detail-input" type="number" inputmode="decimal" value="${defaultVal}" placeholder="0">
+        <span class="split-detail-unit">${label}</span>
+      `;
+      row.querySelector('input').addEventListener('input', updateSplitDetail);
+    }
+
+    rows.appendChild(row);
+  });
+
+  updateSplitDetail();
+}
+
+function updateSplitDetail() {
+  const expAmt = parseFloat($('expense-amount').value) || 0;
+
+  if (expenseSplitType === 'equal') {
+    const split = state.currentSplit;
+    const people = split ? activePeople(split) : [];
+    const each = people.length > 0 && expAmt > 0 ? expAmt / people.length : 0;
+    // refresh read-only amount divs
+    document.querySelectorAll('#split-detail-rows .split-detail-row').forEach(row => {
+      const div = row.querySelectorAll('div')[1];
+      if (div) div.textContent = each > 0 ? formatAmt(each) : '—';
+    });
+    $('split-total-val').textContent = expAmt > 0 ? formatAmt(expAmt) : '—';
+    $('split-total-bar').classList.toggle('valid', expAmt > 0);
+    $('split-total-bar').classList.remove('invalid');
+    return;
+  }
+  let sum = 0;
+  document.querySelectorAll('#split-detail-rows .split-detail-input').forEach(inp => {
+    sum += parseFloat(inp.value) || 0;
+  });
+
+  let display = '';
+  let valid = false;
+
+  if (expenseSplitType === 'shares') {
+    // show computed amounts
+    if (sum > 0 && expAmt > 0) {
+      let computed = [];
+      document.querySelectorAll('#split-detail-rows .split-detail-row').forEach(row => {
+        const shares = parseFloat(row.querySelector('input').value) || 0;
+        const owes = (shares / sum) * expAmt;
+        computed.push(owes);
+        // update per-row calc display
+        const calc = row.querySelector('.share-calc');
+        if (calc) {
+          if (shares > 0) {
+            calc.textContent = formatAmt(owes);
+            calc.classList.add('has-value');
+          } else {
+            calc.textContent = '—';
+            calc.classList.remove('has-value');
+          }
+        }
+      });
+      display = `${formatAmt(computed.reduce((a,b)=>a+b,0))} / ${formatAmt(expAmt)}`;
+      valid = Math.abs(computed.reduce((a,b)=>a+b,0) - expAmt) < 0.02;
+    } else {
+      // clear all calc spans when no total entered yet
+      document.querySelectorAll('#split-detail-rows .share-calc').forEach(c => {
+        c.textContent = '—'; c.classList.remove('has-value');
+      });
+      display = '—';
+    }
+  } else if (expenseSplitType === 'exact') {
+    display = `${formatAmt(sum)} / ${formatAmt(expAmt)}`;
+    valid = expAmt > 0 && Math.abs(sum - expAmt) < 0.01;
+  } else if (expenseSplitType === 'percent') {
+    display = `${sum.toFixed(1)}%`;
+    valid = Math.abs(sum - 100) < 0.1;
+  }
+
+  $('split-total-val').textContent = display;
+  $('split-total-bar').classList.toggle('valid', valid);
+  $('split-total-bar').classList.toggle('invalid', !valid && sum > 0);
+}
+
+// save expense
+$('btn-save-expense').addEventListener('click', async () => {
+  const split = state.currentSplit;
+  if (!split) return;
+
+  const desc = $('expense-desc').value.trim();
+  const amount = parseFloat($('expense-amount').value);
+  if (!desc) { toast('Add a description'); return; }
+  if (!amount || amount <= 0) { toast('Enter a valid amount'); return; }
+
+  // validate payers
+  const selectedPayers = [...document.querySelectorAll('#payers-list .payer-row.selected')];
+  if (!selectedPayers.length) { toast('Select at least one payer'); return; }
+  const payers = selectedPayers.map(row => ({
+    id: row.dataset.personId,
+    name: split.people.find(p=>p.id===row.dataset.personId)?.name || '?',
+    amount: parseFloat(row.querySelector('.payer-amount-input').value) || 0,
+  }));
+  const payersTotal = payers.reduce((a,p)=>a+p.amount,0);
+  if (Math.abs(payersTotal - amount) > 0.01) { toast('Payer amounts must equal total'); return; }
+
+  // compute splits
+  const active = activePeople(split);
+  let splits = [];
+  if (expenseSplitType === 'equal') {
+    const each = amount / active.length;
+    splits = active.map(p => ({ id: p.id, name: p.name, owes: each }));
+  } else if (expenseSplitType === 'shares') {
+    const rows = document.querySelectorAll('#split-detail-rows .split-detail-row');
+    let totalShares = 0;
+    rows.forEach(r => totalShares += parseFloat(r.querySelector('input').value)||0);
+    splits = active.map((p,i) => {
+      const shares = parseFloat(rows[i]?.querySelector('input').value)||0;
+      return { id: p.id, name: p.name, owes: totalShares > 0 ? (shares/totalShares)*amount : 0 };
+    });
+  } else if (expenseSplitType === 'exact') {
+    const rows = document.querySelectorAll('#split-detail-rows .split-detail-row');
+    splits = active.map((p,i) => ({
+      id: p.id, name: p.name, owes: parseFloat(rows[i]?.querySelector('input').value)||0
+    }));
+    const splitTotal = splits.reduce((a,s)=>a+s.owes,0);
+    if (Math.abs(splitTotal - amount) > 0.01) { toast('Split amounts must equal total'); return; }
+  } else if (expenseSplitType === 'percent') {
+    const rows = document.querySelectorAll('#split-detail-rows .split-detail-row');
+    splits = active.map((p,i) => {
+      const pct = parseFloat(rows[i]?.querySelector('input').value)||0;
+      return { id: p.id, name: p.name, owes: (pct/100)*amount };
+    });
+    const pctTotal = [...document.querySelectorAll('#split-detail-rows .split-detail-input')].reduce((a,i)=>a+(parseFloat(i.value)||0),0);
+    if (Math.abs(pctTotal - 100) > 0.1) { toast('Percentages must add up to 100%'); return; }
+  }
+
+  const wasEditing = !!editingExpenseId;
+
+  if (editingExpenseId) {
+    // update existing expense in-place
+    const idx = split.expenses.findIndex(e => e.id === editingExpenseId);
+    if (idx >= 0) {
+      split.expenses[idx] = { ...split.expenses[idx], desc, amount, payers, splits, splitType: expenseSplitType };
+    }
+    editingExpenseId = null;
+  } else {
+    const expense = { id: genId(), desc, amount, payers, splits, splitType: expenseSplitType, createdAt: Date.now() };
+    split.expenses = [...(split.expenses||[]), expense];
+  }
+
+  await fbSaveSplit(split);
+  closeExpenseSheet();
+  toast(wasEditing ? 'Expense updated ✓' : 'Expense added ✓');
+  renderSplitScreen(split);
+  if (currentScreen === 'home') renderActivityList();
+});
+
+// ── SUMMARY TAB ───────────────────────────────────────────────────────────────
+function renderSummary(split) {
+  const container = $('summary-content');
+  const expenses = split.expenses || [];
+  if (!expenses.length) {
+    container.innerHTML = `<div class="empty-state" style="padding-top:40px"><div class="empty-icon">📊</div><div>Add expenses to see<br>who owes what.</div></div>`;
+    return;
+  }
+
+  const sym = currencySymbol(split.currency);
+
+  // compute balances per person
+  const balance = {}; // personId → net (positive = owed, negative = owes)
+  split.people.forEach(p => balance[p.id] = 0);
+
+  expenses.forEach(exp => {
+    // payers get credited
+    (exp.payers||[]).forEach(py => { if(balance[py.id]!==undefined) balance[py.id] += py.amount; });
+    // each person debited by their split share
+    (exp.splits||[]).forEach(s => { if(balance[s.id]!==undefined) balance[s.id] -= s.owes; });
+  });
+
+  // simplify debts
+  const settlements = simplifyDebts(split.people, balance);
+  const settledMap = split.settledPayments || {}; // key: "from→to" → bool
+
+  // sort: unpaid first, settled last
+  const sorted = [...settlements].sort((a, b) => {
+    const aKey = `${a.from}→${a.to}`;
+    const bKey = `${b.from}→${b.to}`;
+    return (settledMap[aKey] ? 1 : 0) - (settledMap[bKey] ? 1 : 0);
+  });
+
+  let html = '';
+
+  // settlements FIRST
+  if (sorted.length) {
+    html += `<div class="settlement-section" style="padding-top:4px">
+      <div class="settlement-title">Who pays whom</div>`;
+    sorted.forEach(s => {
+      const key = `${s.from}→${s.to}`;
+      const done = !!settledMap[key];
+      html += `<div class="settlement-row${done ? ' settled' : ''}" data-key="${key}">
+        <div class="settlement-col-from">
+          <div class="person-avatar" style="width:32px;height:32px;font-size:12px;flex-shrink:0">${avatarInitial(s.from)}</div>
+          <div class="settlement-name">${s.from}</div>
+        </div>
+        <span class="settlement-arrow">→</span>
+        <div class="settlement-col-to">
+          <div class="person-avatar" style="width:32px;height:32px;font-size:12px;flex-shrink:0">${avatarInitial(s.to)}</div>
+          <div class="settlement-name">${s.to}</div>
+          <div class="settlement-amt">${sym}${s.amount.toFixed(2)}</div>
+          <button class="settle-check${done ? ' done' : ''}" data-key="${key}" title="${done ? 'Mark unpaid' : 'Mark as paid'}">
+            <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>
+          </button>
+        </div>
+      </div>`;
+    });
+    html += `<button class="settlement-share-btn" id="btn-share-summary-img">
+      <svg viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+      Share Summary
+    </button>`;
+    html += '</div>';
+  }
+
+  container.innerHTML = html;
+
+  // wire up settle-check buttons
+  container.querySelectorAll('.settle-check').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const key = btn.dataset.key;
+      const split = state.currentSplit;
+      if (!split) return;
+      split.settledPayments = split.settledPayments || {};
+      const nowDone = !split.settledPayments[key];
+      split.settledPayments[key] = nowDone;
+      renderSummary(split);
+      fbSaveSplit(split);
+    });
+  });
+
+  // wire up share as image button
+  const shareImgBtn = container.querySelector('#btn-share-summary-img');
+  if (shareImgBtn) {
+    shareImgBtn.addEventListener('click', () => {
+      generateSummaryImage(state.currentSplit);
+    });
+  }
+}
+
+function simplifyDebts(people, balance) {
+  // Greedy min-cash-flow
+  const debtors = [], creditors = [];
+  people.forEach(p => {
+    const net = balance[p.id] || 0;
+    if (net < -0.01) debtors.push({ name: p.name, amt: -net });
+    else if (net > 0.01) creditors.push({ name: p.name, amt: net });
+  });
+  const results = [];
+  let i=0, j=0;
+  while (i < debtors.length && j < creditors.length) {
+    const pay = Math.min(debtors[i].amt, creditors[j].amt);
+    if (pay > 0.01) results.push({ from: debtors[i].name, to: creditors[j].name, amount: pay });
+    debtors[i].amt -= pay;
+    creditors[j].amt -= pay;
+    if (debtors[i].amt < 0.01) i++;
+    if (creditors[j].amt < 0.01) j++;
+  }
+  return results;
+}
+
+// ── SUMMARY IMAGE GENERATOR ───────────────────────────────────────────────────
+async function generateSummaryImage(split) {
+  if (!split) return;
+
+  const sym        = currencySymbol(split.currency);
+  const settledMap = split.settledPayments || {};
+
+  // recompute balances
+  const balance = {};
+  split.people.forEach(p => balance[p.id] = 0);
+  (split.expenses||[]).forEach(exp => {
+    (exp.payers||[]).forEach(py => { if (balance[py.id] !== undefined) balance[py.id] += py.amount; });
+    (exp.splits||[]).forEach(s  => { if (balance[s.id]  !== undefined) balance[s.id]  -= s.owes; });
+  });
+  const settlements = simplifyDebts(split.people, balance);
+  const sorted = [...settlements].sort((a,b) =>
+    (settledMap[`${a.from}→${a.to}`] ? 1 : 0) - (settledMap[`${b.from}→${b.to}`] ? 1 : 0)
+  );
+
+  // ── build off-screen DOM card ──
+  const card = document.createElement('div');
+  card.style.cssText = `
+    position: fixed; left: -9999px; top: 0;
+    width: 480px;
+    background: #F2EFE9;
+    font-family: 'DM Sans', sans-serif;
+    padding: 32px 28px 28px;
+    border-radius: 0;
+    box-sizing: border-box;
+  `;
+
+  // header
+  const header = document.createElement('div');
+  header.style.cssText = `margin-bottom: 20px;`;
+  header.innerHTML = `
+    <div style="font-size:10px;font-family:'DM Mono',monospace;color:#9A9590;letter-spacing:0.08em;text-transform:uppercase;margin-bottom:8px">QuickSplit · Who pays whom</div>
+    <div style="font-family:'DM Serif Display',serif;font-size:28px;color:#1A1714;line-height:1.15;margin-bottom:6px">${split.name}</div>
+    <div style="font-size:12px;font-family:'DM Mono',monospace;color:#9A9590">${split.people?.length||0} people · ${sym}${((split.expenses||[]).reduce((a,e)=>a+Number(e.amount),0)).toFixed(2)} total</div>
+  `;
+  card.appendChild(header);
+
+  // divider
+  const divider = document.createElement('div');
+  divider.style.cssText = `height:1px;background:#D8D4CE;margin-bottom:16px;`;
+  card.appendChild(divider);
+
+  // rows — always render at full opacity regardless of settled state
+  sorted.forEach(s => {
+    const row = document.createElement('div');
+    row.style.cssText = `
+      display: flex;
+      align-items: center;
+      background: #FFFFFF;
+      border-radius: 12px;
+      padding: 14px 18px;
+      margin-bottom: 8px;
+    `;
+
+    // FROM — left half, fixed width
+    const fromName = document.createElement('div');
+    fromName.style.cssText = `
+      width: 42%;
+      font-size: 15px;
+      font-weight: 600;
+      color: #1A1714;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    `;
+    fromName.textContent = s.from;
+
+    // ARROW — fixed width centred
+    const arrow = document.createElement('div');
+    arrow.style.cssText = `
+      width: 8%;
+      font-size: 16px;
+      color: #E8471A;
+      text-align: center;
+      flex-shrink: 0;
+    `;
+    arrow.textContent = '→';
+
+    // TO — right side, fills remaining space before amount
+    const toName = document.createElement('div');
+    toName.style.cssText = `
+      flex: 1;
+      font-size: 15px;
+      font-weight: 600;
+      color: #1A1714;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    `;
+    toName.textContent = s.to;
+
+    const amt = document.createElement('div');
+    amt.style.cssText = `
+      font-family: 'DM Mono', monospace;
+      font-size: 15px;
+      font-weight: 600;
+      color: #E8471A;
+      text-align: right;
+      flex-shrink: 0;
+      margin-left: 12px;
+    `;
+    amt.textContent = `${sym}${s.amount.toFixed(2)}`;
+
+    row.appendChild(fromName);
+    row.appendChild(arrow);
+    row.appendChild(toName);
+    row.appendChild(amt);
+    card.appendChild(row);
+  });
+
+  // footer
+  const footer = document.createElement('div');
+  footer.style.cssText = `margin-top:8px;font-size:10px;font-family:'DM Mono',monospace;color:#C8C4BE;text-align:center;`;
+  footer.textContent = 'made with QuickSplit';
+  card.appendChild(footer);
+
+  document.body.appendChild(card);
+
+  // ── snapshot with html2canvas ──
+  try {
+    const canvas = await html2canvas(card, {
+      scale: 2,
+      backgroundColor: '#F2EFE9',
+      useCORS: true,
+      logging: false,
+    });
+    document.body.removeChild(card);
+
+    // put into preview canvas
+    const preview = $('summary-img-canvas');
+    preview.width  = canvas.width;
+    preview.height = canvas.height;
+    preview.style.width  = '100%';
+    preview.style.height = 'auto';
+    preview.getContext('2d').drawImage(canvas, 0, 0);
+
+    // store blob for share
+    state._summaryCanvas = canvas;
+
+    $('sheet-backdrop-img').classList.add('open');
+    $('sheet-img-preview').classList.add('open');
+    $('btn-img-share').style.display = navigator.share ? 'flex' : 'none';
+
+  } catch(e) {
+    document.body.removeChild(card);
+    console.error('html2canvas failed', e);
+    toast('Could not generate image');
+  }
+}
+
+
+// ── IMAGE SHEET LISTENERS ──────────────────────────────────────────────────────
+$('sheet-backdrop-img').addEventListener('click', () => {
+  $('sheet-backdrop-img').classList.remove('open');
+  $('sheet-img-preview').classList.remove('open');
+});
+$('btn-sheet-img-close').addEventListener('click', () => {
+  $('sheet-backdrop-img').classList.remove('open');
+  $('sheet-img-preview').classList.remove('open');
+});
+
+$('btn-img-download').addEventListener('click', () => {
+  const canvas = $('summary-img-canvas');
+  const link = document.createElement('a');
+  const name = (state.currentSplit?.name || 'split').toLowerCase().replace(/\s+/g, '-');
+  link.download = `${name}-summary.png`;
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+  toast('Image saved ✓');
+});
+
+$('btn-img-share').addEventListener('click', async () => {
+  const canvas = state._summaryCanvas || $('summary-img-canvas');
+  canvas.toBlob(async blob => {
+    const name = (state.currentSplit?.name || 'split').toLowerCase().replace(/\s+/g, '-');
+    const file = new File([blob], `${name}-summary.png`, { type: 'image/png' });
+    try {
+      await navigator.share({ files: [file], title: state.currentSplit?.name || 'Split Summary' });
+    } catch(e) {
+      if (e.name !== 'AbortError') toast('Share failed — try Download instead');
+    }
+  }, 'image/png');
+});
+function renderShare(split) {
+  const baseUrl = window.location.href.split('?')[0];
+  const url = `${baseUrl}?split=${split.id}`;
+  $('share-url-text').textContent = url;
+
+  // QR code
+  const canvas = $('qr-canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,180,180);
+  try {
+    // Use qrcodejs to generate
+    const tempDiv = document.createElement('div');
+    new QRCode(tempDiv, { text: url, width: 160, height: 160, colorDark: '#1A1714', colorLight: '#F2EFE9' });
+    setTimeout(() => {
+      const img = tempDiv.querySelector('img');
+      if (img) {
+        img.onload = () => { ctx.fillStyle='#F2EFE9'; ctx.fillRect(0,0,180,180); ctx.drawImage(img,10,10,160,160); };
+        if (img.complete) { ctx.fillStyle='#F2EFE9'; ctx.fillRect(0,0,180,180); ctx.drawImage(img,10,10,160,160); }
+      }
+    }, 100);
+  } catch(e) {
+    // Fallback text if QR lib not loaded
+    ctx.fillStyle='#F2EFE9'; ctx.fillRect(0,0,180,180);
+    ctx.fillStyle='#9A9590'; ctx.font='12px DM Mono'; ctx.textAlign='center';
+    ctx.fillText('QR unavailable', 90, 90);
+  }
+}
+
+$('btn-copy-link').addEventListener('click', () => {
+  const url = $('share-url-text').textContent;
+  navigator.clipboard.writeText(url).then(() => toast('Link copied ✓')).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = url; document.body.appendChild(ta); ta.select();
+    document.execCommand('copy'); document.body.removeChild(ta);
+    toast('Link copied ✓');
+  });
+});
+
+
+// ── TABS ──────────────────────────────────────────────────────────────────────
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    $('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+$('btn-split-back').addEventListener('click', () => {
+  if (state.fbListener) { try { state.fbListener(); } catch(_) {} state.fbListener = null; }
+  showScreen('home', true);
+  renderActivityList();
+});
+
+// ── DELETE SPLIT ──────────────────────────────────────────────────────────────
+$('btn-delete-split').addEventListener('click', () => {
+  const split = state.currentSplit;
+  if (!split) return;
+  $('delete-split-desc').textContent = `"${split.name}" and all its expenses will be permanently removed.`;
+  $('sheet-backdrop-delete-split').classList.add('open');
+  $('sheet-delete-split').classList.add('open');
+});
+
+$('btn-cancel-delete-split').addEventListener('click', () => {
+  $('sheet-backdrop-delete-split').classList.remove('open');
+  $('sheet-delete-split').classList.remove('open');
+});
+$('sheet-backdrop-delete-split').addEventListener('click', () => {
+  $('sheet-backdrop-delete-split').classList.remove('open');
+  $('sheet-delete-split').classList.remove('open');
+});
+
+$('btn-confirm-delete-split').addEventListener('click', async () => {
+  const split = state.currentSplit;
+  if (!split) return;
+  // remove from localStorage
+  const all = lsGetAll().filter(s => s.id !== split.id);
+  localStorage.setItem('qs_splits', JSON.stringify(all));
+  // remove from Firebase if available
+  if (fbReady()) {
+    const { db, ref } = window._fb;
+    try { await window._fb.set(ref(db, `splits/${split.id}`), null); } catch(_) {}
+  }
+  $('sheet-backdrop-delete-split').classList.remove('open');
+  $('sheet-delete-split').classList.remove('open');
+  if (state.fbListener) { try { state.fbListener(); } catch(_) {} state.fbListener = null; }
+  state.currentSplit = null;
+  state.currentSplitId = null;
+  showScreen('home', true);
+  renderActivityList();
+  toast('Split deleted');
+});
+
+// ── JOIN FLOW ─────────────────────────────────────────────────────────────────
+function initJoin(splitId) {
+  showScreen('join');
+  $('join-split-name').textContent = 'Loading…';
+  $('join-name-input').value = '';
+  $('join-name-grid').innerHTML = `<div style="grid-column:1/-1"><div class="spinner"></div></div>`;
+
+  // load split
+  state.fbListener = fbListenSplit(splitId, split => {
+    if (!split) { $('join-split-name').textContent = 'Split not found'; return; }
+    state.currentSplit = split;
+    state.currentSplitId = splitId;
+    $('join-split-name').textContent = split.name;
+
+    const grid = $('join-name-grid');
+    grid.innerHTML = '';
+    (split.people||[]).forEach(p => {
+      const card = el('div','name-pick-card');
+      card.innerHTML = `<div class="name-pick-avatar">${avatarInitial(p.name)}</div><div class="name-pick-label">${p.name}</div>`;
+      card.addEventListener('click', () => {
+        grid.querySelectorAll('.name-pick-card').forEach(c => c.classList.remove('selected'));
+        card.classList.add('selected');
+        $('join-name-input').value = '';
+      });
+      grid.appendChild(card);
+    });
+  });
+}
+
+$('btn-join-confirm').addEventListener('click', () => {
+  const picked = $('join-name-grid').querySelector('.name-pick-card.selected');
+  const typed = $('join-name-input').value.trim();
+  const name = typed || picked?.querySelector('.name-pick-label')?.textContent;
+
+  if (!name) { toast('Pick or enter your name'); return; }
+
+  const split = state.currentSplit;
+  if (split && !split.people.find(p => p.name === name)) {
+    // add new person to split
+    split.people.push({ id: genId(), name });
+    fbSaveSplit(split);
+  }
+
+  state.viewerName = name;
+  openSplit(state.currentSplitId);
+});
+
+// ── DEEP LINK ─────────────────────────────────────────────────────────────────
+function checkDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const splitId = params.get('split');
+  if (splitId) {
+    initJoin(splitId);
+  }
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+function startApp() {
+  initHome();
+  checkDeepLink();
+}
+
+if (window._fb?.ready) {
+  // Firebase loaded — wait for auth state before starting
+  window._fbAuthReady = (user) => {
+    window._fbAuthReady = null; // only fire once
+    startApp();
+  };
+  // If auth already resolved before this script ran, start immediately
+  if (window._fb.currentUser) startApp();
+} else {
+  // No Firebase — start immediately in local mode
+  startApp();
+}
+</script>
+
+</body>
+</html>
