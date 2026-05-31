@@ -6,6 +6,8 @@ A no-fuss expense splitting web app for dinners, day trips, and group outings. N
 
 **Live demo:** [split-second-weld.vercel.app](https://split-second-weld.vercel.app)
 
+Vibe Coded with ❤️ by Laveek Garg and Abhimanyu Sirothia
+
 ---
 
 ## What it does
