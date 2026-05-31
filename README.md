@@ -160,17 +160,6 @@ That's it. Intentionally simple.
 
 ---
 
-## Roadmap
-
-- [ ] Push notifications when someone adds an expense
-- [ ] Firestore-backed activity feed (for cross-device history)
-- [ ] Multi-currency within a single split
-- [ ] Receipt photo capture
-- [ ] Payment integrations (UPI, PayPal)
-- [ ] Native iOS app (spec in [`SplitSecond-iOS-Spec.md`](./SplitSecond-iOS-Spec.md))
-
----
-
 ## Design
 
 The visual design is derived from a custom design spec (`design.md`) — warm off-white background, a single orange accent (`#E8471A`), DM Serif Display for headings, DM Sans for body, DM Mono for numbers and metadata.
