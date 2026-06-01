@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>How I Built SplitSecond</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Newsreader:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #f5f4ed;
+    --ink:       #1B365D;
+    --ink-light: #2e4f7a;
+    --muted:     #7a7a6a;
+    --border:    #d9d5c9;
+    --surface:   #edeae1;
+    --surface-2: #e5e1d6;
+    --accent:    #1B365D;
+    --tag-bg:    #d8e4f0;
+    --tag-text:  #1B365D;
+    --serif:     'Newsreader', Georgia, serif;
+    --sans:      'Inter', Helvetica Neue, sans-serif;
+
+    /* phase colours — subtle warm palette */
+    --phase-design:   #d8e4f0;
+    --phase-scope:    #d6e8d8;
+    --phase-arch:     #ede0d4;
+    --phase-build:    #e4d8ed;
+    --phase-iter:     #f0e4c8;
+    --phase-feature:  #d8e4f0;
+    --phase-deploy:   #d6e8d8;
+    --phase-polish:   #ede0d4;
+    --phase-ship:     #e4d8ed;
+  }
+
+  html { font-size: 16px; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--serif);
+    font-weight: 400;
+    line-height: 1.55;
+    min-height: 100vh;
+  }
+
+  /* ── Page shell ── */
+  .page {
+    max-width: 780px;
+    margin: 0 auto;
+    padding: 72px 44px 96px;
+  }
+
+  /* ── Page header ── */
+  .page-header {
+    border-bottom: 1.5px solid var(--ink);
+    padding-bottom: 30px;
+    margin-bottom: 44px;
+  }
+
+  .eyebrow {
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.13em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 14px;
+  }
+
+  .page-title {
+    font-size: clamp(2rem, 5vw, 2.8rem);
+    font-weight: 500;
+    line-height: 1.12;
+    color: var(--ink);
+    margin-bottom: 16px;
+  }
+
+  .page-title em { font-style: italic; color: var(--ink-light); }
+
+  .page-desc {
+    font-size: 1.05rem;
+    line-height: 1.55;
+    color: var(--muted);
+    max-width: 560px;
+  }
+
+  /* ── Intro note ── */
+  .intro-note {
+    background: var(--surface);
+    border-left: 3px solid var(--accent);
+    padding: 18px 22px;
+    margin-bottom: 52px;
+    border-radius: 0 4px 4px 0;
+  }
+  .intro-note p { font-size: 0.95rem; line-height: 1.55; color: var(--ink); }
+  .intro-note p + p { margin-top: 8px; }
+  .intro-note strong { font-weight: 600; }
+  .intro-note a { color: var(--ink); }
+
+  /* ── Phases legend ── */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 52px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--sans);
+    font-size: 10.5px;
+    font-weight: 500;
+    color: var(--ink);
+  }
+  .legend-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Timeline ── */
+  .timeline {
+    position: relative;
+    padding-left: 38px;
+  }
+  /* vertical spine */
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 11px;        /* center of dot: padding-left(38) - left(28) + half-dot(5) = 15... adjusted below */
+    top: 8px;
+    bottom: 0;
+    width: 1.5px;
+    background: var(--border);
+  }
+
+  /* ── Step ── */
+  .step {
+    position: relative;
+    margin-bottom: 40px;
+  }
+  .step:last-child { margin-bottom: 0; }
+
+  /* dot — centered on spine: spine at left:11px, padding-left:38px → dot left = 11 - 38 + (width/2 correction) */
+  /* dot is 10px wide, left:-27px → position from page = 38-27 = 11px, center = 11 + 5 = 16px. Spine left:11px width:1.5px → center 11.75. Fix: left:-26px → center = 38-26+5 = 17... Let's just math it cleanly */
+  /* spine center = 11 + 0.75 = 11.75px from page left. Inside .timeline padding-left:38. So dot center relative to .timeline = 11.75. dot width=10, so left = 11.75 - 5 = 6.75 ≈ 7px. But .step is inside .timeline so left is relative to .step. left = 7 - 38 = -31px */
+  .step::before {
+    content: '';
+    position: absolute;
+    left: -31px;
+    top: 13px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: 2.5px solid var(--bg);
+    box-shadow: 0 0 0 1.5px var(--accent);
+    z-index: 1;
+  }
+
+  /* phase-coloured dots */
+  .step[data-phase="design"]::before  { background: #4a7ab5; box-shadow: 0 0 0 1.5px #4a7ab5; }
+  .step[data-phase="scope"]::before   { background: #4a9060; box-shadow: 0 0 0 1.5px #4a9060; }
+  .step[data-phase="arch"]::before    { background: #b07040; box-shadow: 0 0 0 1.5px #b07040; }
+  .step[data-phase="build"]::before   { background: #8050a0; box-shadow: 0 0 0 1.5px #8050a0; }
+  .step[data-phase="iter"]::before    { background: #b08820; box-shadow: 0 0 0 1.5px #b08820; }
+  .step[data-phase="feature"]::before { background: #4a7ab5; box-shadow: 0 0 0 1.5px #4a7ab5; }
+  .step[data-phase="deploy"]::before  { background: #4a9060; box-shadow: 0 0 0 1.5px #4a9060; }
+  .step[data-phase="polish"]::before  { background: #b07040; box-shadow: 0 0 0 1.5px #b07040; }
+  .step[data-phase="ship"]::before    { background: #8050a0; box-shadow: 0 0 0 1.5px #8050a0; }
+
+  /* ── Step meta row ── */
+  .step-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+  }
+  .step-number {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .step-tag {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 3px;
+    color: var(--ink);
+  }
+  .tag-design  { background: var(--phase-design); }
+  .tag-scope   { background: var(--phase-scope); }
+  .tag-arch    { background: var(--phase-arch); }
+  .tag-build   { background: var(--phase-build); }
+  .tag-iter    { background: var(--phase-iter); }
+  .tag-feature { background: var(--phase-feature); }
+  .tag-deploy  { background: var(--phase-deploy); }
+  .tag-polish  { background: var(--phase-polish); }
+  .tag-ship    { background: var(--phase-ship); }
+
+  /* ── Bubble ── */
+  .bubble {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 18px 22px;
+    box-shadow: 0 1px 4px rgba(27,54,93,0.05);
+  }
+  .bubble-label {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 8px;
+  }
+  .bubble p {
+    font-size: 1rem;
+    line-height: 1.55;
+    color: var(--ink);
+  }
+  .bubble p + p { margin-top: 9px; }
+  .bubble code {
+    font-family: 'DM Mono', 'Courier New', monospace;
+    font-size: 0.87em;
+    background: var(--surface);
+    padding: 1px 5px;
+    border-radius: 3px;
+  }
+
+  /* ── Outcome ── */
+  .outcome {
+    margin-top: 12px;
+    padding-left: 2px;
+  }
+  .outcome-label {
+    font-family: var(--sans);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .outcome p {
+    font-size: 0.925rem;
+    line-height: 1.5;
+    color: var(--ink);
+    font-style: italic;
+  }
+  .outcome p + p { margin-top: 7px; }
+
+  /* ── Artifact chip ── */
+  .artifacts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 11px;
+  }
+  .artifact {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 11px;
+    font-family: var(--sans);
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--ink);
+    text-decoration: none;
+  }
+  .artifact svg { opacity: 0.55; flex-shrink: 0; }
+
+  /* ── Section divider ── */
+  .section-break {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin: 48px 0 40px;
+  }
+  .section-break-line {
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+  .section-break-label {
+    font-family: var(--sans);
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  /* ── Footer ── */
+  .page-footer {
+    margin-top: 72px;
+    padding-top: 24px;
+    border-top: 1px solid var(--border);
+  }
+  .page-footer p {
+    font-family: var(--sans);
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .page-footer a { color: var(--ink); }
+
+  @media (max-width: 580px) {
+    .page { padding: 48px 22px 72px; }
+    .page-title { font-size: 1.9rem; }
+    .timeline { padding-left: 30px; }
+    .step::before { left: -23px; }
+    .timeline::before { left: 9px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Header -->
+  <header class="page-header">
+    <p class="eyebrow">Vibe-coding session · May 2026</p>
+    <h1 class="page-title">How I Built <em>SplitSecond</em></h1>
+    <p class="page-desc">The prompts behind a full expense-splitting web app — built from scratch, in a single conversation with Claude.</p>
+  </header>
+
+  <!-- Intro -->
+  <div class="intro-note">
+    <p>This is an <strong>overview</strong>, not a transcript. The actual conversation had well over 40 prompts — the cards below are paraphrased summaries of the key ones, written to be easy to follow for someone who wasn't there. The real messages were often shorter, messier, and more back-and-forth.</p>
+    <p>The app is real though — built in a single session with Claude, no prior code, deployed at <strong><a href="https://split-second-weld.vercel.app" target="_blank">split-second-weld.vercel.app</a></strong>. Firebase backend, works on mobile, fully shareable.</p>
+  </div>
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:#4a7ab5"></div> Design</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#4a9060"></div> Scope</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#b07040"></div> Architecture</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#8050a0"></div> Build</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#b08820"></div> UI Iteration</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#4a7ab5"></div> Feature</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#4a9060"></div> Deploy</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#b07040"></div> Polish</div>
+    <div class="legend-item"><div class="legend-dot" style="background:#8050a0"></div> Ship</div>
+  </div>
+
+  <!-- ── PHASE 1: FOUNDATION ── -->
+  <div class="section-break">
+    <div class="section-break-line"></div>
+    <span class="section-break-label">Foundation</span>
+    <div class="section-break-line"></div>
+  </div>
+
+  <div class="timeline">
+
+    <!-- 01 -->
+    <div class="step" data-phase="design">
+      <div class="step-meta">
+        <span class="step-number">01</span>
+        <span class="step-tag tag-design">Design reference</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>I have a screenshot of a mobile UI I like the look and feel of. Can you generate a <code>design.md</code> file from it? I want to capture the colours, fonts, spacing, and overall visual language so I can use it as a reference going forward.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>Claude read the screenshot and produced a full design spec — warm off-white background <code>#F2EFE9</code>, a single orange accent <code>#E8471A</code>, DM Serif Display for headings, DM Sans for body, and DM Mono for numbers. This file became the visual brief for everything that followed.</p>
+        <div class="artifacts">
+          <span class="artifact"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 2h7l3 3v9H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 2v3h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>design.md</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 02 -->
+    <div class="step" data-phase="scope">
+      <div class="step-meta">
+        <span class="step-number">02</span>
+        <span class="step-tag tag-scope">Concept + scope</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>I want to build an expense splitting app — something I can actually use with friends and family for dinners and trips. Not recurring bills, just fast in and out. Let's use that <code>design.md</code> we just made. What should this include? What should we call it?</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>Claude proposed a feature set and name options. We settled on <em>QuickSplit</em> as the working name (renamed later). The scope was locked: a home screen with recent activity, a new split creation flow, multiple expense types, a summary with debt simplification, and sharing. No mandatory accounts.</p>
+      </div>
+    </div>
+
+    <!-- 03 -->
+    <div class="step" data-phase="arch">
+      <div class="step-meta">
+        <span class="step-number">03</span>
+        <span class="step-tag tag-arch">Architecture</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>I want this as a single HTML file — no build step, no frameworks. But it needs to sync in real time so two people on their phones can use it at the same time. Can we use Firebase? Also, anonymous login first — no forced account creation.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>Architecture confirmed: Firebase Realtime Database for live sync, localStorage as a fallback. Auth would be anonymous-first — the primary CTA on the sign-in screen is "Use without an account" in orange. Creating an account is secondary. A greedy min-cash-flow algorithm was chosen for settling debts.</p>
+      </div>
+    </div>
+
+    <!-- 04 -->
+    <div class="step" data-phase="build">
+      <div class="step-meta">
+        <span class="step-number">04</span>
+        <span class="step-tag tag-build">First build</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>I don't have a Firebase project set up yet — just use a placeholder config for now. Let's move. Build the whole thing.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>Claude built the entire app in one pass — a single HTML file with a working home screen, split creation flow, expense entry, four split modes (equal, shares, exact, percentage), people management, a summary with debt graph, and QR-based sharing. Design tokens from <code>design.md</code> applied throughout.</p>
+        <div class="artifacts">
+          <span class="artifact"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 2h7l3 3v9H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 2v3h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>quicksplit.html — first working version</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /timeline -->
+
+  <!-- ── PHASE 2: ITERATION ── -->
+  <div class="section-break">
+    <div class="section-break-line"></div>
+    <span class="section-break-label">UI Iteration</span>
+    <div class="section-break-line"></div>
+  </div>
+
+  <div class="timeline">
+
+    <!-- 05 -->
+    <div class="step" data-phase="iter">
+      <div class="step-meta">
+        <span class="step-number">05</span>
+        <span class="step-tag tag-iter">Visual refinement</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>The buttons don't feel right — "Add Person" and "Start Split" look equally important. Start Split should be the primary action, clearly orange. Add Person should be secondary — outlined, not filled.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>"Start Split" became the full-orange primary. "Add Person" was restyled as a white, bordered secondary button. This button hierarchy pattern was then applied consistently across all flows throughout the app.</p>
+      </div>
+    </div>
+
+    <!-- 06 -->
+    <div class="step" data-phase="iter">
+      <div class="step-meta">
+        <span class="step-number">06</span>
+        <span class="step-tag tag-iter">UI feedback</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>The hover states feel off — some elements have them, some don't. And when a modal opens on top of another modal, the stacking is broken. Also some text is misaligned in the expense rows.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>Hover states were standardised across all interactive elements. The modal stacking issue was fixed with proper z-index layering. Expense row alignment was corrected to use consistent baseline alignment throughout.</p>
+      </div>
+    </div>
+
+    <!-- 07 -->
+    <div class="step" data-phase="iter">
+      <div class="step-meta">
+        <span class="step-number">07</span>
+        <span class="step-tag tag-iter">Typography consistency</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>The amounts in the summary screen are using the wrong font — they should be in DM Mono like we specified in the design file. And the section headings inside modals feel too heavy.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>All monetary amounts and debt figures were updated to DM Mono. Modal section headings were lightened to weight 500 to match the editorial hierarchy from the design spec.</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── PHASE 3: FEATURES ── -->
+  <div class="section-break">
+    <div class="section-break-line"></div>
+    <span class="section-break-label">New Features</span>
+    <div class="section-break-line"></div>
+  </div>
+
+  <div class="timeline">
+
+    <!-- 08 -->
+    <div class="step" data-phase="feature">
+      <div class="step-meta">
+        <span class="step-number">08</span>
+        <span class="step-tag tag-feature">Auth layer</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>We need actual login screens now — anonymous first, but also the option to sign in with email or Google so your splits follow you across devices. Add Firebase Auth to the app.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>Firebase Auth was wired in with three paths: continue anonymously, sign in with Google, or create an email account. The anonymous session upgrades seamlessly when the user decides to create a real account — their existing splits carry over. The Firebase script block was fully replaced to expose auth globally.</p>
+      </div>
+    </div>
+
+    <!-- 09 -->
+    <div class="step" data-phase="feature">
+      <div class="step-meta">
+        <span class="step-number">09</span>
+        <span class="step-tag tag-feature">Rename</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>I want to rename the app from QuickSplit to SplitSecond. Update everything — the title, the logo, the meta tags, all of it.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>Every reference to QuickSplit across the HTML was updated to SplitSecond. The page title, app header, manifest name, share text, and all meta tags were updated in one pass.</p>
+      </div>
+    </div>
+
+    <!-- 10 -->
+    <div class="step" data-phase="feature">
+      <div class="step-meta">
+        <span class="step-number">10</span>
+        <span class="step-tag tag-feature">Share as image</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>I want a "Share as image" button in the summary view that generates a nice-looking card I can share on WhatsApp — showing who owes what, the split name, and the total.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>A share-as-image feature was built using canvas rendering — generates a settlement card styled in the app's design language, then downloads it as a PNG or triggers the native share sheet on mobile. Perfect for quick WhatsApp sharing.</p>
+      </div>
+    </div>
+
+    <!-- 11 -->
+    <div class="step" data-phase="feature">
+      <div class="step-meta">
+        <span class="step-number">11</span>
+        <span class="step-tag tag-feature">iOS spec</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>Can you generate a spec.md from this entire app? I want to use it to build an iOS version. Native elements mostly, but keep the visual language — especially the orange accent and the DM Serif headings.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>Claude read the entire app and wrote a comprehensive iOS specification covering all screens, navigation flows, data model, SwiftUI component guidance, and a section on translating the web design tokens into native iOS patterns (system tint, SF Symbols, grouped table views).</p>
+        <div class="artifacts">
+          <span class="artifact"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 2h7l3 3v9H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 2v3h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>SplitSecond-iOS-Spec.md</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── PHASE 4: DEPLOY ── -->
+  <div class="section-break">
+    <div class="section-break-line"></div>
+    <span class="section-break-label">Deploy &amp; Ship</span>
+    <div class="section-break-line"></div>
+  </div>
+
+  <div class="timeline">
+
+    <!-- 12 -->
+    <div class="step" data-phase="deploy">
+      <div class="step-meta">
+        <span class="step-number">12</span>
+        <span class="step-tag tag-deploy">Firebase setup</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>I've created a Firebase project — it's called <code>splitsecond-d6d43</code>, region is Asia Southeast. Here's my real config. Can you wire it in?</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>The placeholder Firebase config was replaced with the real project credentials. SDK version was confirmed at 12.14.0 to match what the Firebase Console provided. Database security rules were also set up — all reads and writes require authentication.</p>
+      </div>
+    </div>
+
+    <!-- 13 -->
+    <div class="step" data-phase="deploy">
+      <div class="step-meta">
+        <span class="step-number">13</span>
+        <span class="step-tag tag-deploy">Vercel deploy</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>I pasted the config and clicked publish. What's next? I have the file — but I don't think the login screens are in the current version yet. I got it running at <code>split-second-weld.vercel.app</code>. Can you add the login bit?</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>Claude fetched the live URL to check what was actually deployed, found it was still in demo mode with the placeholder config, and then integrated the full auth flow — login screen, anonymous continue option, Google sign-in, and email sign-up — into the deployed version.</p>
+      </div>
+    </div>
+
+    <!-- 14 -->
+    <div class="step" data-phase="polish">
+      <div class="step-meta">
+        <span class="step-number">14</span>
+        <span class="step-tag tag-polish">OG preview image</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>I want a nice preview image for when I share the link on WhatsApp — the kind that shows up as a card preview. Can you generate one that matches the app's design?</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>An OG preview image was generated using Playwright so it could render actual DM Serif Display from Google Fonts — not a fallback system font. The image shows the SplitSecond wordmark, tagline, and a sample settlement card on the warm parchment background.</p>
+        <div class="artifacts">
+          <span class="artifact"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M2 6h12" stroke="currentColor" stroke-width="1.3"/></svg>og-image.png</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 15 -->
+    <div class="step" data-phase="polish">
+      <div class="step-meta">
+        <span class="step-number">15</span>
+        <span class="step-tag tag-polish">OG image fix</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>In that generated image, the "SplitSecond" text doesn't match the serif font we've been using. Fix that. And also remove the little screenshot with the names from it.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>The image was re-rendered via browser canvas to use the actual DM Serif Display font — Pillow (the Python image library) can only use system fonts, so it couldn't match. The screenshot element was removed, leaving just the wordmark, tagline, and feature pills on the warm background.</p>
+        <div class="artifacts">
+          <span class="artifact"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M2 6h12" stroke="currentColor" stroke-width="1.3"/></svg>og-image.png — revised</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 16 -->
+    <div class="step" data-phase="ship">
+      <div class="step-meta">
+        <span class="step-number">16</span>
+        <span class="step-tag tag-ship">Homescreen icons</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>Can I make sure that when people add this app to their homescreen on mobile, it has a nice icon? Something that looks like the app — maybe with the two S's from the name.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>Three icon sizes were generated (512px, 192px, 180px) — an orange rounded square with an upright "S" and an italic "S" in DM Serif Display, representing the two words in the name. Meta tags for Apple and Android PWA were added to the HTML. All icons were deployed alongside the app.</p>
+        <div class="artifacts">
+          <span class="artifact"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M2 6h12" stroke="currentColor" stroke-width="1.3"/></svg>icon-512.png</span>
+          <span class="artifact"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><rect x="2" y="3" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1.3"/><path d="M2 6h12" stroke="currentColor" stroke-width="1.3"/></svg>apple-touch-icon.png</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 17 -->
+    <div class="step" data-phase="ship">
+      <div class="step-meta">
+        <span class="step-number">17</span>
+        <span class="step-tag tag-ship">README</span>
+      </div>
+      <div class="bubble">
+        <p class="bubble-label">Abhi said</p>
+        <p>Can you write a README for this? I want to put the whole thing on GitHub. It should cover what the app does, how to set it up, and the key features.</p>
+      </div>
+      <div class="outcome">
+        <p class="outcome-label">What happened</p>
+        <p>A full README was written covering the app's purpose, setup (Firebase config, Vercel deploy), a feature breakdown (split modes, people management, guest vs account), a design section referencing the <code>design.md</code> tokens, and a short roadmap with potential future features including a native iOS app.</p>
+        <div class="artifacts">
+          <span class="artifact"><svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3 2h7l3 3v9H3V2z" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M10 2v3h3" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/><path d="M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>README.md</span>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /timeline -->
+
+  <!-- Footer -->
+  <footer class="page-footer">
+    <p>The full session spanned many more rounds of iteration — this captures the key inflection points. The live app is at <a href="https://split-second-weld.vercel.app" target="_blank">split-second-weld.vercel.app</a>. Total time from first prompt to deployed app: one extended session.</p>
+  </footer>
+
+</div><!-- /page -->
+</body>
+</html>
